@@ -3,29 +3,29 @@ repository: sproogen/resume-theme
 favicon: images/favicon.ico
 
 # Content configuration version
-version: 2
+version: 1
 
 # Personal info
-name: Brett Harris
-title: Senior Network System Administrator
-email: brett.h@email.co.uk
-website: www.github.com/sproogen/resume-theme
+name: Tanuj Soni
+title: Lead Software Engineer
+email: tanujsoni027@gmail.com
+website: https://tanuj24.github.io
 
 # Dark Mode (true/false/never)
 darkmode: false
 
 # Social links
-twitter_username: facespics
-github_username:  sproogen
+twitter_username: tanuj
+github_username:  tanuj24
 # stackoverflow_username: "00000001"
 # dribbble_username: jekyll
 # facebook_username: jekyll
 # flickr_username: jekyll
-instagram_username: jameswgrant
-linkedin_username: jameswgrant
+instagram_username: ___tanuj_____
+linkedin_username: tanujsoni027
 # xing_username: jekyll
 # pinterest_username: jekyll
-youtube_username: globalmtb
+youtube_username: tanuj
 # googleplus_username: +jekyll
 # orcid_username: 0000-0000-0000-0000
 
