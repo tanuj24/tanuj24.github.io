@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tanuj Soni — AI/Data Solutions Architect</title>
+<meta name="description" content="AI and Data Solutions Architect / Solutions Engineer with 8+ years designing cloud data platforms, event-driven data processing systems, GenAI-enabled data products, backend APIs, and distributed ETL/ELT platforms across AWS, Azure, and GCP.">
+<link rel="canonical" href="https://tanuj24.github.io/">
+<link rel="icon" href="images/favicon.ico">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://tanuj24.github.io/">
+<meta property="og:title" content="Tanuj Soni — AI/Data Solutions Architect">
+<meta property="og:description" content="8+ years designing cloud data platforms, event-driven processing systems, and GenAI-enabled data products across AWS, Azure, and GCP.">
+<meta property="og:image" content="https://tanuj24.github.io/images/profile.jpg">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Person",
+  "name": "Tanuj Soni",
+  "jobTitle": "AI/Data Solutions Architect & Solutions Engineer",
+  "email": "mailto:tanujsoni027@gmail.com",
+  "url": "https://tanuj24.github.io/",
+  "image": "https://tanuj24.github.io/images/profile.jpg",
+  "alumniOf": "Indian Institute of Technology, Delhi",
+  "sameAs": [
+    "https://github.com/tanuj24",
+    "https://www.linkedin.com/in/tanujsoni027"
+  ]
+}
+</script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-raise: #12171f;
+    --card: #151b24;
+    --border: rgba(240, 246, 252, 0.09);
+    --border-hover: rgba(129, 140, 248, 0.45);
+    --text: #e6edf3;
+    --muted: #9aa4b2;
+    --faint: #6e7a8a;
+    --indigo: #818cf8;
+    --cyan: #38bdf8;
+    --grad: linear-gradient(120deg, #818cf8, #38bdf8);
+    --radius: 16px;
+    --maxw: 1080px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  ::selection { background: rgba(129, 140, 248, 0.35); }
+
+  .glow {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(900px 480px at 70% -10%, rgba(129, 140, 248, 0.16), transparent 65%),
+      radial-gradient(700px 420px at 10% 8%, rgba(56, 189, 248, 0.09), transparent 60%);
+  }
+
+  a { color: var(--cyan); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  img { max-width: 100%; }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+  /* ---------- Nav ---------- */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(13, 17, 23, 0.82);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .nav-logo {
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    font-size: 1.05rem;
+    background: var(--grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    white-space: nowrap;
+  }
+  .nav-links {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nav-links::-webkit-scrollbar { display: none; }
+  .nav-links a {
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+    transition: color 0.15s, background 0.15s;
+  }
+  .nav-links a:hover { color: var(--text); text-decoration: none; background: rgba(240, 246, 252, 0.06); }
+  .nav-links a.active { color: var(--text); background: rgba(129, 140, 248, 0.16); }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 88px 0 40px; }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 48px;
+    align-items: center;
+  }
+  .kicker {
+    display: inline-block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--indigo);
+    margin-bottom: 18px;
+  }
+  h1 {
+    font-size: clamp(2.6rem, 7.5vw, 4.6rem);
+    line-height: 1.03;
+    letter-spacing: -0.03em;
+    font-weight: 800;
+  }
+  h1 .grad {
+    background: var(--grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hero-title {
+    margin-top: 16px;
+    font-size: clamp(1.05rem, 2.4vw, 1.3rem);
+    font-weight: 600;
+    color: var(--text);
+  }
+  .hero-sub {
+    margin-top: 14px;
+    max-width: 560px;
+    color: var(--muted);
+    font-size: 1.02rem;
+  }
+  .hero-links { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    color: var(--text);
+    background: var(--card);
+    transition: transform 0.15s, border-color 0.15s;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-2px); border-color: var(--border-hover); }
+  .btn.primary { background: var(--grad); border: none; color: #0b1020; }
+  .btn svg { width: 16px; height: 16px; fill: currentColor; flex: none; }
+  .portrait {
+    width: 216px;
+    height: 216px;
+    border-radius: 28px;
+    object-fit: cover;
+    display: block;
+    border: 1px solid var(--border);
+  }
+  .portrait-ring {
+    padding: 5px;
+    border-radius: 33px;
+    background: linear-gradient(140deg, rgba(129, 140, 248, 0.7), rgba(56, 189, 248, 0.4), transparent 70%);
+  }
+
+  /* ---------- Highlights ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin: 44px 0 0;
+  }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 18px;
+    transition: transform 0.18s, border-color 0.18s;
+  }
+  .stat:hover { transform: translateY(-3px); border-color: var(--border-hover); }
+  .stat b {
+    display: block;
+    font-size: 1.65rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: var(--grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .stat span { color: var(--muted); font-size: 0.85rem; }
+
+  /* ---------- Sections ---------- */
+  section { padding: 64px 0 8px; }
+  .sec-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    background: var(--grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: 10px;
+  }
+  h2 {
+    font-size: clamp(1.7rem, 4vw, 2.4rem);
+    letter-spacing: -0.03em;
+    font-weight: 800;
+    margin-bottom: 28px;
+  }
+  .about-text p { color: var(--muted); max-width: 800px; margin-bottom: 16px; font-size: 1.02rem; }
+  .about-text strong { color: var(--text); }
+  mark {
+    background: rgba(56, 189, 248, 0.16);
+    color: var(--cyan);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+
+  /* ---------- Cards ---------- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 26px;
+    transition: transform 0.18s, border-color 0.18s;
+  }
+  .card:hover { transform: translateY(-3px); border-color: var(--border-hover); }
+
+  /* ---------- Featured project ---------- */
+  .featured {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 0;
+    overflow: hidden;
+    padding: 0;
+    background: linear-gradient(140deg, rgba(129, 140, 248, 0.10), rgba(56, 189, 248, 0.05) 55%, transparent), var(--card);
+  }
+  .featured-body { padding: 34px; display: flex; flex-direction: column; justify-content: center; }
+  .pill {
+    display: inline-block;
+    align-self: flex-start;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--indigo);
+    border: 1px solid rgba(129, 140, 248, 0.4);
+    border-radius: 999px;
+    padding: 4px 12px;
+    margin-bottom: 16px;
+  }
+  .featured h3 { font-size: 1.9rem; letter-spacing: -0.03em; font-weight: 800; }
+  .featured p { color: var(--muted); margin: 12px 0 22px; }
+  .featured-shot { border-left: 1px solid var(--border); background: #0b0f14; display: flex; }
+  .featured-shot img { width: 100%; height: 100%; object-fit: cover; object-position: left top; display: block; }
+
+  /* ---------- Timeline ---------- */
+  .timeline { position: relative; display: flex; flex-direction: column; gap: 22px; }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 10px;
+    bottom: 10px;
+    width: 1px;
+    background: linear-gradient(180deg, var(--indigo), var(--cyan), transparent);
+    opacity: 0.45;
+  }
+  .t-item { position: relative; padding-left: 38px; }
+  .t-item::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 30px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 3px solid var(--indigo);
+  }
+  .t-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 4px; }
+  .t-head h3 { font-size: 1.25rem; letter-spacing: -0.02em; font-weight: 700; }
+  .t-head h3 a { color: var(--text); }
+  .t-head h3 a:hover { color: var(--cyan); text-decoration: none; }
+  .t-role { color: var(--indigo); font-weight: 600; font-size: 0.95rem; }
+  .t-date { color: var(--faint); font-size: 0.85rem; margin-left: auto; white-space: nowrap; }
+  .t-item h4 { margin: 16px 0 6px; font-size: 0.98rem; font-weight: 700; color: var(--text); }
+  .t-item ul { list-style: none; }
+  .t-item li {
+    color: var(--muted);
+    font-size: 0.93rem;
+    padding-left: 18px;
+    position: relative;
+    margin-bottom: 6px;
+  }
+  .t-item li::before { content: "▹"; position: absolute; left: 0; color: var(--cyan); font-size: 0.8rem; top: 2px; }
+
+  /* ---------- Consulting grid ---------- */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .c-card h3 { font-size: 1.02rem; font-weight: 700; letter-spacing: -0.01em; }
+  .c-card h3 a { color: var(--text); }
+  .c-card h3 a:hover { color: var(--cyan); text-decoration: none; }
+  .c-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0 10px; font-size: 0.83rem; }
+  .c-meta .role { color: var(--indigo); font-weight: 600; }
+  .c-meta .date { color: var(--faint); }
+  .c-card p { color: var(--muted); font-size: 0.9rem; }
+
+  /* ---------- Skills ---------- */
+  .skill-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .skill-group h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; color: var(--text); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font-size: 0.8rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    background: rgba(240, 246, 252, 0.03);
+    border-radius: 999px;
+    padding: 4px 12px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .chip:hover { border-color: var(--border-hover); color: var(--text); }
+
+  /* ---------- Education ---------- */
+  .edu-caption { color: var(--faint); font-size: 0.85rem; }
+  .edu-sub { color: var(--indigo); font-weight: 600; margin: 4px 0 12px; font-size: 0.95rem; }
+  .card p.body { color: var(--muted); font-size: 0.93rem; margin-bottom: 10px; }
+  .awards li {
+    color: var(--muted);
+    font-size: 0.93rem;
+    list-style: none;
+    padding-left: 18px;
+    position: relative;
+    margin-bottom: 8px;
+  }
+  .awards li::before { content: "★"; position: absolute; left: 0; color: var(--indigo); font-size: 0.75rem; top: 3px; }
+  .awards b { color: var(--text); }
+
+  /* ---------- Footer ---------- */
+  footer {
+    margin-top: 80px;
+    border-top: 1px solid var(--border);
+    padding: 48px 0 56px;
+    text-align: center;
+  }
+  footer h2 { margin-bottom: 10px; }
+  footer .sub { color: var(--muted); max-width: 480px; margin: 0 auto 26px; }
+  .foot-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
+  .foot-note { margin-top: 36px; color: var(--faint); font-size: 0.8rem; }
+
+  /* ---------- Reveal ---------- */
+  .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.5s ease, transform 0.5s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+    .card, .stat, .btn { transition: none; }
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 880px) {
+    .hero { padding: 56px 0 24px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 32px; }
+    .portrait-ring { justify-self: start; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .featured { grid-template-columns: 1fr; }
+    .featured-shot { border-left: none; border-top: 1px solid var(--border); max-height: 300px; }
+    .grid-2, .skill-groups { grid-template-columns: 1fr; }
+    .t-date { margin-left: 0; width: 100%; }
+  }
+</style>
+<noscript><style>.reveal{opacity:1 !important;transform:none !important}</style></noscript>
+</head>
+<body>
+<div class="glow" aria-hidden="true"></div>
+
+<nav aria-label="Site">
+  <div class="nav-inner">
+    <span class="nav-logo">Tanuj Soni</span>
+    <div class="nav-links" id="navLinks">
+      <a href="#about">About</a>
+      <a href="#experience">Experience</a>
+      <a href="#consulting">Consulting</a>
+      <a href="#projects">Projects</a>
+      <a href="#education">Education</a>
+      <a href="#contact">Contact</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <div class="hero-grid">
+    <div>
+      <span class="kicker">AI · Data · Cloud</span>
+      <h1>Tanuj <span class="grad">Soni</span></h1>
+      <p class="hero-title">AI/Data Solutions Architect &amp; Solutions Engineer</p>
+      <p class="hero-sub">I design and deliver cloud data platforms, event-driven processing systems, and GenAI-enabled data products across AWS, Azure, and GCP — turning ambiguous business problems into scalable technical designs.</p>
+      <div class="hero-links">
+        <a class="btn primary" href="mailto:tanujsoni027@gmail.com">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4.24-8 5-8-5V6.5l8 5 8-5v1.74z"/></svg>
+          Email
+        </a>
+        <a class="btn" href="https://github.com/tanuj24" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.15c-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.75 2.69 1.25 3.35.95.1-.75.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.24 2.76.12 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.7 5.38-5.26 5.66.41.36.77 1.05.77 2.13v3.16c0 .3.21.67.8.55A11.52 11.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+          GitHub
+        </a>
+        <a class="btn" href="https://www.linkedin.com/in/tanujsoni027" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45z"/></svg>
+          LinkedIn
+        </a>
+      </div>
+    </div>
+    <div class="portrait-ring">
+      <img class="portrait" src="images/profile.jpg" alt="Portrait of Tanuj Soni" width="216" height="216">
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat reveal"><b>8+</b><span>years of experience</span></div>
+    <div class="stat reveal"><b>185</b><span>workflows migrated to Spark/K8s</span></div>
+    <div class="stat reveal"><b>30%</b><span>cloud cost reduction</span></div>
+    <div class="stat reveal"><b>1M+</b><span>records/day near real-time</span></div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="about">
+    <p class="sec-label">About</p>
+    <h2>Architecture with engineering depth</h2>
+    <div class="about-text reveal">
+      <p>AI and Data Solutions Architect / Solutions Engineer with 8+ years of experience designing and delivering cloud data platforms, event-driven data processing systems, GenAI-enabled data products, backend APIs, and distributed ETL/ELT platforms across AWS, Azure, and GCP.</p>
+      <p>Hands-on engineering depth in Python, SQL, Spark, PySpark, Kafka, AWS Glue, Kubernetes, serverless, APIs, and microservices — with the ability to translate ambiguous business problems into scalable technical designs.</p>
+      <p>Builds AI and data solutions spanning <mark>RAG</mark>, <mark>Neo4j knowledge graphs</mark>, conversational BI, metadata management, SQL lineage, PII classification, data governance, ML and NLP pipelines, and enterprise analytics.</p>
+      <p>Delivers measurable modernization outcomes including 185 workflow migrations to Spark/Kubernetes, ~100% performance improvement, 30% cloud cost reduction, and 1M+ records/day near real-time processing.</p>
+    </div>
+  </section>
+
+  <section id="projects">
+    <p class="sec-label">Featured Project</p>
+    <h2>What I build on my own time</h2>
+    <div class="card featured reveal">
+      <div class="featured-body">
+        <span class="pill">Open · Free · One Docker image</span>
+        <h3>Mimir</h3>
+        <p>Your local AWS cloud: 54 AWS-compatible services and a full web console in one Docker image, free. Point your SDK at localhost and develop, test, and demo cloud architectures without an AWS bill.</p>
+        <div>
+          <a class="btn primary" href="https://tanuj24.github.io/mimir/" target="_blank" rel="noopener">Explore Mimir →</a>
+        </div>
+      </div>
+      <div class="featured-shot">
+        <img src="images/mimir-console.png" loading="lazy" alt="Mimir web console showing AWS-compatible services running locally in one Docker image">
+      </div>
+    </div>
+  </section>
+
+  <section id="experience">
+    <p class="sec-label">Experience</p>
+    <h2>Where I've worked</h2>
+    <div class="timeline">
+
+      <article class="t-item card reveal">
+        <div class="t-head">
+          <h3><a href="https://tbo.com" target="_blank" rel="noopener">TBO.com (TBO TEK)</a></h3>
+          <span class="t-role">Lead Software Engineer</span>
+          <span class="t-date">March 2026 – Present</span>
+        </div>
+        <ul>
+          <li>Engineered backend data processing improvements using Python, Kafka, AWS ECS, AWS Glue, and S3, improving reliability and maintainability across critical data workflows.</li>
+          <li>Designed data ingestion pipelines and event-driven processing flows for scalable, high-volume data movement across distributed platforms.</li>
+          <li>Optimized Kafka consumer configurations, schema validation, and job orchestration across repositories, strengthening data quality, processing stability, and operational consistency.</li>
+          <li>Diagnosed and resolved production issues across backend services and data pipelines, delivering fixes that reduced operational friction and improved processing reliability.</li>
+          <li>Translated downstream data requirements into scalable backend processing designs aligned with platform architecture and operational needs.</li>
+        </ul>
+      </article>
+
+      <article class="t-item card reveal">
+        <div class="t-head">
+          <h3><a href="https://exlservice.com" target="_blank" rel="noopener">EXL Services</a></h3>
+          <span class="t-role">Data Solutions Architect</span>
+          <span class="t-date">February 2024 – February 2026</span>
+        </div>
+        <h4>Automated Framework for Informatica Workflow Migration — Comcast</h4>
+        <ul>
+          <li>Led architecture and delivery of a migration accelerator that moved 185 Informatica workflows to auto-scaling Spark + Kubernetes, improving performance by ~100%.</li>
+          <li>Built the Edge-Node Decommission framework for automated deployment, scaling, and operational handoff of migrated workflows.</li>
+          <li>Optimized legacy mappings through session sharing, transformation tuning, and Python-based Teradata TPT writers for high-throughput Spark-to-Teradata loads.</li>
+          <li>Managed an 8-member data engineering and analyst team to complete the migration within 5 months.</li>
+        </ul>
+        <h4>Conversational AI Platform — Comcast</h4>
+        <ul>
+          <li>Spearheaded a real-time Conversational AI platform that translated natural-language questions into dynamic BI dashboard outputs.</li>
+          <li>Architected ETL/ELT workflows for ingestion, normalization, discrepancy detection, and integration with enterprise BI environments.</li>
+          <li>Partnered with data science, engineering, and UI/UX teams to define scalable, query-responsive dashboard architecture.</li>
+        </ul>
+        <h4>Payments Reconciliation Pipeline — Showmax</h4>
+        <ul>
+          <li>Designed a unified reconciliation platform integrating payment gateways, CRMs, billing platforms, data validation, and exception workflows.</li>
+          <li>Implemented secure data pipelines with RBAC, encrypted APIs, front-end discrepancy resolution, and real-time finance dashboards.</li>
+        </ul>
+        <h4>Data Architecture CoE &amp; Reusable Accelerators</h4>
+        <ul>
+          <li>Drove CoE initiatives as Big Data and AWS Solutions SME across client case studies, RFPs, modernization assessments, and reusable technical assets.</li>
+          <li>Architected a Spark/YAML no-code ETL framework with Python interfaces for Glue, Databricks, and local execution.</li>
+          <li>Designed a GenAI metadata management tool with data cataloging, SQL lineage, PII classification, derived-column detection, and workflow visualization.</li>
+          <li>Leveraged Neo4j knowledge graphs and RAG to support semantic metadata search and AI-assisted data discovery.</li>
+        </ul>
+      </article>
+
+      <article class="t-item card reveal">
+        <div class="t-head">
+          <h3><a href="https://franconnect.com" target="_blank" rel="noopener">Franconnect</a></h3>
+          <span class="t-role">Lead Software Engineer</span>
+          <span class="t-date">January 2023 – February 2024</span>
+        </div>
+        <h4>E-Learning Analytics &amp; ETL Modernization</h4>
+        <ul>
+          <li>Led a team delivering near real-time training compliance analytics with AWS Glue, PySpark, Lambda, Kafka, EventBridge, and S3 data lakes.</li>
+          <li>Built self-scaling pipelines for high transaction volumes and created an ETL testing microservice to streamline QA validation.</li>
+          <li>Migrated legacy workflows to dbt-core/dbt-cloud with Snowflake, improving maintainability and release consistency.</li>
+          <li>Built dynamic Glue orchestration, MongoDB tenant configuration, and AWS CDK CI/CD automation, reducing cloud cost by 30%.</li>
+        </ul>
+        <h4>Microservices, Public API Platform &amp; Scorecards</h4>
+        <ul>
+          <li>Consolidated 50+ public APIs into a Spring Cloud microservices architecture and reduced API latency by 25% through backend workflow optimization.</li>
+          <li>Developed Flask data APIs with RabbitMQ-backed asynchronous processing and piloted a GCP ingestion POC using BigQuery, Dataproc, and Pub/Sub.</li>
+          <li>Built AWS Glue/Spark pipelines for P&amp;L reporting, scorecards, and leaderboards, reducing ETL execution from 1 hour to 10 minutes.</li>
+        </ul>
+      </article>
+
+      <article class="t-item card reveal">
+        <div class="t-head">
+          <h3><a href="https://rxlogix.com" target="_blank" rel="noopener">RxLogix</a></h3>
+          <span class="t-role">Senior Software Engineer</span>
+          <span class="t-date">July 2018 – January 2023</span>
+        </div>
+        <h4>PV DataHub Serverless Pipeline</h4>
+        <ul>
+          <li>Architected a fully serverless AWS ETL pipeline for pharmacovigilance data, reducing processing time by 60% and handling 1M+ records/day within ~15 minutes.</li>
+          <li>Integrated AWS Glue, custom S3 streaming, KMS, Cognito, PII masking, and role-based access controls for secure near real-time ingestion.</li>
+          <li>Built Spark transformations to flatten nested JSON into relational DataFrames, improving processing speed by 70%.</li>
+          <li>Developed configurable Excel/CSV-driven transformations, ML-based completion forecasting, and developer dashboards for execution insight and error tracking.</li>
+        </ul>
+        <h4>PV Signal, Clinical Data &amp; ETL Applications</h4>
+        <ul>
+          <li>Built ML and NLP cleansing for FDA datasets with 95% accuracy, reducing processing time from 5 days to under 15 minutes with Spark MLlib.</li>
+          <li>Implemented Python/C++ Bayesian decision-support components and optimized EBGM/RR scoring with PL/SQL from 20 minutes to under 5 seconds.</li>
+          <li>Automated CDISC clinical data ingestion (CSV, JSON, XML) into MongoDB and built Django/Celery services that scaled to 5,000+ concurrent users.</li>
+          <li>Enhanced Oracle SQL/PLSQL and Java components for PV-Signal/PV-Reports, external safety-source integration, SLA support, and production triage.</li>
+        </ul>
+      </article>
+
+    </div>
+  </section>
+
+  <section id="consulting">
+    <p class="sec-label">Contractual Work</p>
+    <h2>Freelance &amp; consulting</h2>
+    <div class="grid-2">
+
+      <article class="card c-card reveal">
+        <h3>Crossroads Lease</h3>
+        <div class="c-meta"><span class="role">GenAI Engineer</span><span class="date">November 2025 – March 2026</span></div>
+        <p>Engineered RiskAPI, a production FastAPI service for real-time credit scorecard (PD/risk grade) and decision-tree evaluation, migrating it to CRModel v0.7.3 with Salesforce-compatible responses and a production-grade layered architecture. Built a GenAI/LLM pipeline extracting structured credit entities from unstructured applicant documents to enrich scoring and cut manual review.</p>
+      </article>
+
+      <article class="card c-card reveal">
+        <h3>ZS Associates | Client: Johnson &amp; Johnson</h3>
+        <div class="c-meta"><span class="role">Tech Lead, Data</span><span class="date">November 2025 – February 2026</span></div>
+        <p>Led end-to-end data modeling of a LATAM-specific Medical CRM — dimensional schemas, semantic layers, and re-architected base views — migrating legacy SQL-native ETL to AWS. Delivered as a production data product in 4 months with 500+ users onboarded and an analytics-ready foundation for reporting and data science.</p>
+      </article>
+
+      <article class="card c-card reveal">
+        <h3><a href="https://honeywell.com" target="_blank" rel="noopener">Honeywell</a></h3>
+        <div class="c-meta"><span class="role">Scala Engineer</span><span class="date">June 2025 – August 2025</span></div>
+        <p>Built an automated unit-testing framework for Spark/Scala jobs processing IoT sensor data, and cut Glue processing cost 50% with a master–slave auto-scaling execution framework. Delivered a supply-chain ETL pipeline powering analytics and automated product-inventory recommendations.</p>
+      </article>
+
+      <article class="card c-card reveal">
+        <h3>Perficient | Client: Worley</h3>
+        <div class="c-meta"><span class="role">Data Architect</span><span class="date">June 2024 – June 2025</span></div>
+        <p>Architected Spark/AWS Glue pipelines ingesting Engineering Work Pages and Construction Work Packages from source APIs, and migrated Glue workflows to Airflow with automated on-demand DAG generation. Built a custom framework to run dbt over AWS Glue and designed RBAC-based BI layers for role-governed access.</p>
+      </article>
+
+      <article class="card c-card reveal">
+        <h3>Augusta Hitech | Client: Vyaire Medical</h3>
+        <div class="c-meta"><span class="role">AWS Data Engineer</span><span class="date">August 2024 – November 2024</span></div>
+        <p>Developed AWS Glue/Spark pipelines automating BOM order processing on the AWS Supply Chain platform, consolidating ERP and vendor sources into Redshift on 15-minute refresh cycles. Tuned ETL feeding QuickSight dashboards and curated analytics layers for SageMaker demand-forecasting and supply-risk models.</p>
+      </article>
+
+      <article class="card c-card reveal">
+        <h3>SG Analytics</h3>
+        <div class="c-meta"><span class="role">Software Engineer</span><span class="date">June 2024 – September 2024</span></div>
+        <p>Designed a FastAPI framework for a dynamic company-worth and credit-eligibility application integrating Moody's data APIs, plus a configurable Python rule engine automating Bank of America's B2B transaction flagging. Hardened integrations with retry, rate limiting, and caching; containerized with CI/CD, validation, and audit logging.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section id="skills">
+    <p class="sec-label">Technical Skills</p>
+    <h2>Toolbox</h2>
+    <div class="skill-groups">
+      <div class="card skill-group reveal">
+        <h3>Languages</h3>
+        <div class="chips"><span class="chip">Python</span><span class="chip">SQL</span><span class="chip">Java</span><span class="chip">Scala</span><span class="chip">C++</span><span class="chip">PL/SQL</span></div>
+      </div>
+      <div class="card skill-group reveal">
+        <h3>Data Engineering</h3>
+        <div class="chips"><span class="chip">Spark</span><span class="chip">PySpark</span><span class="chip">AWS Glue</span><span class="chip">Airflow</span><span class="chip">Kafka</span><span class="chip">dbt</span><span class="chip">Databricks</span><span class="chip">ETL/ELT</span><span class="chip">Batch &amp; streaming pipelines</span></div>
+      </div>
+      <div class="card skill-group reveal">
+        <h3>Databases &amp; Warehouses</h3>
+        <div class="chips"><span class="chip">Oracle</span><span class="chip">Teradata</span><span class="chip">Snowflake</span><span class="chip">BigQuery</span><span class="chip">MongoDB</span><span class="chip">Neo4j</span><span class="chip">Relational databases</span><span class="chip">NoSQL/document stores</span><span class="chip">Graph databases</span><span class="chip">S3 data lakes</span></div>
+      </div>
+      <div class="card skill-group reveal">
+        <h3>Cloud Platforms</h3>
+        <div class="chips"><span class="chip">AWS</span><span class="chip">Azure</span><span class="chip">GCP</span><span class="chip">ECS</span><span class="chip">Lambda</span><span class="chip">EMR</span><span class="chip">Fargate</span><span class="chip">EventBridge</span><span class="chip">Dataproc</span><span class="chip">Pub/Sub</span><span class="chip">EventHub</span></div>
+      </div>
+      <div class="card skill-group reveal">
+        <h3>Backend &amp; APIs</h3>
+        <div class="chips"><span class="chip">Flask</span><span class="chip">Django</span><span class="chip">Spring Boot</span><span class="chip">REST APIs</span><span class="chip">Microservices</span><span class="chip">RabbitMQ</span><span class="chip">Celery</span><span class="chip">Event-driven services</span></div>
+      </div>
+      <div class="card skill-group reveal">
+        <h3>DevOps &amp; IaC</h3>
+        <div class="chips"><span class="chip">Kubernetes</span><span class="chip">Terraform</span><span class="chip">AWS CDK</span><span class="chip">CloudFormation</span><span class="chip">CI/CD</span><span class="chip">Cloud Deploy</span><span class="chip">Orchestration</span><span class="chip">Monitoring</span></div>
+      </div>
+      <div class="card skill-group reveal">
+        <h3>AI, Governance &amp; Analytics</h3>
+        <div class="chips"><span class="chip">GenAI</span><span class="chip">RAG</span><span class="chip">Neo4j</span><span class="chip">Spark MLlib</span><span class="chip">Machine learning</span><span class="chip">NLP</span><span class="chip">Metadata management</span><span class="chip">Data lineage</span><span class="chip">PII classification</span><span class="chip">RBAC</span><span class="chip">KMS</span><span class="chip">Cognito</span><span class="chip">BI dashboards</span><span class="chip">Solution architecture</span><span class="chip">Technical discovery</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="education">
+    <p class="sec-label">Education &amp; Recognition</p>
+    <h2>Foundations</h2>
+    <div class="grid-2">
+      <article class="card reveal">
+        <h3 style="font-size:1.1rem;font-weight:700;">Indian Institute of Technology (IIT), Delhi</h3>
+        <p class="edu-sub">B.Tech, Engineering Physics (Minor — Computer Science)</p>
+        <p class="edu-caption">July 2014 – June 2018</p>
+        <p class="body" style="margin-top:12px;">Graduated from IIT Delhi with a degree in Engineering Physics and a minor in Computer Science, building strong foundations in mathematics, algorithms, and applied computing that underpin data engineering and AI work.</p>
+        <p class="body">Served as Mess Secretary of Karakoram Hostel.</p>
+      </article>
+      <article class="card reveal">
+        <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:14px;">Achievements</h3>
+        <ul class="awards">
+          <li><b>Franconnect:</b> Team Player Award and Rising Star Award</li>
+          <li><b>RxLogix:</b> 5 Spot Awards</li>
+          <li><b>IIT-Delhi:</b> Mess Secretary, Karakoram Hostel</li>
+          <li>Recognized across organizations for innovation, teamwork, and solution delivery</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+</main>
+
+<footer id="contact">
+  <div class="wrap">
+    <p class="sec-label">Contact</p>
+    <h2>Let's build something</h2>
+    <p class="sub">Open to conversations about data platforms, GenAI products, and cloud modernization.</p>
+    <div class="foot-links">
+      <a class="btn primary" href="mailto:tanujsoni027@gmail.com">tanujsoni027@gmail.com</a>
+      <a class="btn" href="https://github.com/tanuj24" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn" href="https://www.linkedin.com/in/tanujsoni027" target="_blank" rel="noopener">LinkedIn</a>
+      <a class="btn" href="https://www.instagram.com/___tanuj_____" target="_blank" rel="noopener">Instagram</a>
+    </div>
+    <p class="foot-note">© <span id="year">2026</span> Tanuj Soni · New Delhi → the cloud</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  document.getElementById("year").textContent = new Date().getFullYear();
+
+  // Reveal on scroll
+  var reveals = document.querySelectorAll(".reveal");
+  if ("IntersectionObserver" in window) {
+    var ro = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          e.target.classList.add("in");
+          ro.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.08 });
+    reveals.forEach(function (el) { ro.observe(el); });
+  } else {
+    reveals.forEach(function (el) { el.classList.add("in"); });
+  }
+
+  // Scrollspy for sticky nav
+  var links = document.querySelectorAll("#navLinks a");
+  var map = {};
+  links.forEach(function (a) {
+    var id = a.getAttribute("href").slice(1);
+    var sec = document.getElementById(id);
+    if (sec) map[id] = a;
+  });
+  function setActive(id) {
+    links.forEach(function (a) { a.classList.remove("active"); });
+    if (map[id]) map[id].classList.add("active");
+  }
+  if ("IntersectionObserver" in window) {
+    var so = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) setActive(e.target.id);
+      });
+    }, { rootMargin: "-40% 0px -55% 0px" });
+    Object.keys(map).forEach(function (id) {
+      so.observe(document.getElementById(id));
+    });
+  }
+})();
+</script>
+</body>
+</html>
