@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Page not found</title>
+<meta name="robots" content="noindex">
+<script>
+  // Mimir is now Goku: its old pages under /mimir/ live under /goku/.
+  if (location.pathname === "/mimir" || location.pathname.indexOf("/mimir/") === 0) {
+    location.replace("/goku/" + location.pathname.replace(/^\/mimir\/?/, "") + location.search + location.hash);
+  }
+</script>
+</head>
+<body>
+<p>Page not found. <a href="/">Home</a></p>
+</body>
+</html>

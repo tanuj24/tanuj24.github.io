@@ -1,0 +1,2167 @@
+#!/bin/sh
+# goku (formerly mimir): the Go program in cli/cmd/goku is the implementation; this script is its feature-frozen fallback.
+# goku (formerly mimir) — run a local AWS cloud on your machine.
+# https://tanuj24.github.io/goku/
+#
+# Manages the Goku all-in-one container so you never write a docker command,
+# and drives a running Goku from the terminal: services and readiness,
+# environment snapshots, fault injection, IAM enforcement and IAM tests,
+# Lambda debugging and logs.
+#
+# Needs sh, curl, awk, sed and grep (Docker too for start/stop/update).
+# State persists automatically in a Docker volume across stops and updates.
+#
+# Installed as `goku`, with `mimir` (the former name) as a link to it that behaves the same.
+# Settings are read from GOKU_* environment variables, then from the former MIMIR_* names.
+# Mimir is now Goku: the image is tanujsoni027/goku and the container goku, configured with GOKU_*
+# variables (every 4.x image understands them). A container named mimir that runs a Goku image
+# (tanujsoni027/mimir-aws, the image's former name, included) is adopted when there is no goku
+# container: start renames it goku, update creates it again as goku. The state stays in the
+# mimir-data volume this script always used; the /_mimir/... HTTP paths stay (every Goku serves them).
+set -u
+
+GOKU_CLI_VERSION="0.2.0"
+DEFAULT_NAME="goku"
+LEGACY_NAME="mimir"
+IMAGE="${GOKU_IMAGE:-${MIMIR_IMAGE:-tanujsoni027/goku:latest}}"
+NAME="${GOKU_CONTAINER:-${MIMIR_CONTAINER:-$DEFAULT_NAME}}"
+VOLUME="${GOKU_DATA_VOLUME:-${MIMIR_DATA_VOLUME:-mimir-data}}"
+IMAGE_SET=false; [ -n "${GOKU_IMAGE:-${MIMIR_IMAGE:-}}" ] && IMAGE_SET=true
+NAME_SET=false; [ -n "${GOKU_CONTAINER:-${MIMIR_CONTAINER:-}}" ] && NAME_SET=true
+LEGACY=false
+CONSOLE_PORT="${GOKU_CONSOLE_PORT:-${MIMIR_CONSOLE_PORT:-8080}}"
+EDGE_PORT="${GOKU_EDGE_PORT:-${MIMIR_EDGE_PORT:-4566}}"
+ENGINE_PORTS="${GOKU_ENGINE_PORTS:-${MIMIR_ENGINE_PORTS:-5500-5524}}"
+AUTO_PERSIST="${GOKU_AUTO_PERSIST:-${MIMIR_AUTO_PERSIST:-}}"
+ENDPOINT="${GOKU_ENDPOINT:-${MIMIR_ENDPOINT:-http://localhost:${EDGE_PORT}}}"
+CONSOLE_URL="${GOKU_CONSOLE_URL:-${MIMIR_CONSOLE_URL:-http://localhost:${CONSOLE_PORT}}}"
+REGION="${GOKU_REGION:-${MIMIR_REGION:-${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}}}"
+ACCESS_KEY="${GOKU_ACCESS_KEY_ID:-${MIMIR_ACCESS_KEY_ID:-test}}"
+SECRET_KEY="${GOKU_SECRET_ACCESS_KEY:-${MIMIR_SECRET_ACCESS_KEY:-test}}"
+LOGS_PAGE="${GOKU_LOGS_PAGE:-${MIMIR_LOGS_PAGE:-1000}}"
+JSON_OUT=false
+NO_BROWSER="${GOKU_NO_BROWSER:-${MIMIR_NO_BROWSER:-}}"
+
+# Exit codes
+EX_FAIL=1       # the operation failed, a check did not pass, or the API answered with an error
+EX_USAGE=2      # bad command line
+EX_DOWN=3       # Goku is not reachable at the endpoint
+EX_OLD=4        # the running Goku is too old for this command
+
+FEATURE="this command"
+FEATURE_MIN="4.0"
+
+say()  { printf '%s\n' "$*"; }
+err()  { printf 'goku: %s\n' "$*" >&2; }
+note() { printf '%s\n' "$*" >&2; }
+die()  { err "$@"; exit "$EX_FAIL"; }
+die_code() { _dc=$1; shift; err "$@"; exit "$_dc"; }
+usage_die() { err "$@"; err "run 'goku help ${CMD:-}' for usage."; exit "$EX_USAGE"; }
+
+colors() {
+  if [ "$1" = on ] && [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
+    C_B=$(printf '\033[1m'); C_G=$(printf '\033[32m'); C_R=$(printf '\033[31m')
+    C_Y=$(printf '\033[33m'); C_D=$(printf '\033[2m'); C_0=$(printf '\033[0m')
+  else
+    C_B=""; C_G=""; C_R=""; C_Y=""; C_D=""; C_0=""
+  fi
+}
+colors on
+
+TMP=""
+tmp_init() {
+  [ -n "$TMP" ] && return 0
+  TMP=$(mktemp -d "${TMPDIR:-/tmp}/goku-cli.XXXXXX") || die "cannot create a temporary directory"
+  trap 'rm -rf "$TMP"' EXIT
+  trap 'rm -rf "$TMP"; exit 130' INT
+  trap 'rm -rf "$TMP"; exit 143' TERM
+}
+
+strip_slash() { printf '%s' "$1" | sed 's:/*$::'; }
+
+# ---------------------------------------------------------------------------
+# JSON (no jq needed): a tokenizer (grep -o) and small awk programs.
+# Flattened form: one "path<TAB>raw JSON value" line per leaf, e.g.
+#   snapshots.0.name<TAB>"checkout-flow"
+# ---------------------------------------------------------------------------
+
+JSON_TOKENS='"([^"\\]|\\.)*"|[][{}:,]|[^][{}:,[:space:]"]+'
+
+AWK_LIB='
+function hexv(h,   i, c, v) {
+  v = 0; h = tolower(h)
+  for (i = 1; i <= length(h); i++) { c = index("0123456789abcdef", substr(h, i, 1)); if (c == 0) return v; v = v * 16 + c - 1 }
+  return v
+}
+function utf8(cp) {
+  if (cp < 128) return sprintf("%c", cp)
+  if (cp < 2048) return sprintf("%c%c", 192 + int(cp / 64), 128 + cp % 64)
+  if (cp < 65536) return sprintf("%c%c%c", 224 + int(cp / 4096), 128 + int(cp / 64) % 64, 128 + cp % 64)
+  return sprintf("%c%c%c%c", 240 + int(cp / 262144), 128 + int(cp / 4096) % 64, 128 + int(cp / 64) % 64, 128 + cp % 64)
+}
+function unesc(s,   n, i, c, o, cp, lo) {
+  if (s == "null") return ""
+  if (substr(s, 1, 1) != "\"") return s
+  s = substr(s, 2, length(s) - 2)
+  if (index(s, "\\") == 0) return s
+  o = ""; n = length(s)
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1)
+    if (c != "\\") { o = o c; continue }
+    i++; c = substr(s, i, 1)
+    if (c == "n") o = o "\n"
+    else if (c == "t") o = o "\t"
+    else if (c == "r") o = o "\r"
+    else if (c == "b") o = o "\b"
+    else if (c == "f") o = o "\f"
+    else if (c == "u") {
+      cp = hexv(substr(s, i + 1, 4)); i += 4
+      if (cp >= 55296 && cp < 56320 && substr(s, i + 1, 2) == "\\u") {
+        lo = hexv(substr(s, i + 3, 4))
+        if (lo >= 56320 && lo < 57344) { cp = 65536 + (cp - 55296) * 1024 + (lo - 56320); i += 6 }
+      }
+      if (cp > 0) o = o utf8(cp)
+    } else o = o c
+  }
+  return o
+}
+function jesc(s,   n, i, c, o) {
+  if (index(s, "\\") == 0 && index(s, "\"") == 0 && s !~ /[\001-\037]/) return "\"" s "\""
+  o = ""; n = length(s)
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1)
+    if (c == "\\") o = o "\\\\"
+    else if (c == "\"") o = o "\\\""
+    else if (c == "\n") o = o "\\n"
+    else if (c == "\t") o = o "\\t"
+    else if (c == "\r") o = o "\\r"
+    else if (c ~ /[\001-\037]/) o = o " "
+    else o = o c
+  }
+  return "\"" o "\""
+}
+function civil(days,   z, era, doe, yoe, y, doy, mp, d, m) {
+  z = days + 719468; era = int((z >= 0 ? z : z - 146096) / 146097); doe = z - era * 146097
+  yoe = int((doe - int(doe / 1460) + int(doe / 36524) - int(doe / 146096)) / 365)
+  y = yoe + era * 400; doy = doe - (365 * yoe + int(yoe / 4) - int(yoe / 100)); mp = int((5 * doy + 2) / 153)
+  d = doy - int((153 * mp + 2) / 5) + 1; m = mp < 10 ? mp + 3 : mp - 9; if (m <= 2) y++
+  return sprintf("%04d-%02d-%02d", y, m, d)
+}
+function mstime(ms,   s, days, rem) {
+  if (ms == "") return ""
+  s = int(ms / 1000); days = int(s / 86400); rem = s - days * 86400
+  return civil(days) " " sprintf("%02d:%02d:%02d.%03d", int(rem / 3600), int((rem % 3600) / 60), rem % 60, ms - s * 1000)
+}
+function isotime(t) { if (t == "") return ""; sub(/T/, " ", t); sub(/\.[0-9]+/, "", t); sub(/Z$/, "", t); sub(/\+00:00$/, "", t); return t }
+function hbytes(n) {
+  if (n == "") return ""
+  n += 0
+  if (n < 1024) return n " B"
+  if (n < 1048576) return sprintf("%.1f KB", n / 1024)
+  if (n < 1073741824) return sprintf("%.1f MB", n / 1048576)
+  return sprintf("%.2f GB", n / 1073741824)
+}
+function shortarn(a) { sub(/^arn:aws[a-z-]*:(iam|sts)::[0-9]*:/, "", a); return a }
+function dwidth(s,   t, n) { t = s; n = gsub(/[\200-\277]/, "", t); return length(s) - n }
+function clip(s, w,   t) {
+  if (w <= 0 || dwidth(s) <= w) return s
+  t = substr(s, 1, w - 1); sub(/[\200-\377]+$/, "", t)
+  while (dwidth(t) > w - 1) { t = substr(t, 1, length(t) - 1); sub(/[\200-\377]+$/, "", t) }
+  return t "~"
+}
+'
+
+AWK_FLAT='
+{ tk[++nt] = $0 }
+END { i = 0; if (nt > 0) pv("") }
+function pv(p,   t) { t = tk[++i]; if (t == "{") po(p); else if (t == "[") pa(p); else print p "\t" t }
+function po(p,   t, k) {
+  if (tk[i + 1] == "}") { i++; print p "\t{}"; return }
+  while (i < nt) { k = unesc(tk[++i]); i++; pv(p == "" ? k : p "." k); t = tk[++i]; if (t != ",") return }
+}
+function pa(p,   t, n) {
+  if (tk[i + 1] == "]") { i++; print p "\t[]"; return }
+  n = 0
+  while (i < nt) { pv(p == "" ? n : p "." n); n++; t = tk[++i]; if (t != ",") return }
+}
+'
+
+# jrows PREFIX SPEC... — one TSV row per element of the array/object at PREFIX.
+# SPEC: alt1|alt2[:fmt]; an alt is a sub-path, @key (index/key), #path (child count),
+# path[] / path[].sub (values joined by ","), or =text. fmt: time ms bytes arn yesno lower.
+AWK_ROWS='
+BEGIN { FS = "\t"; pre = ENVIRON["JR_PRE"]; nf = split(ENVIRON["JR_FIELDS"], F, " "); pl = length(pre) }
+{
+  p = $1
+  if (pre != "") { if (substr(p, 1, pl + 1) != pre ".") next; r = substr(p, pl + 2) } else r = p
+  if (r == "") next
+  d = index(r, "."); if (d) { k = substr(r, 1, d - 1); s = substr(r, d + 1) } else { k = r; s = "" }
+  if (!(k in seen)) { seen[k] = 1; ord[++nk] = k }
+  val[k, s] = substr($0, length($1) + 2)
+  q = s; acc = ""
+  while (q != "") {
+    d = index(q, "."); if (d) { seg = substr(q, 1, d - 1); q = substr(q, d + 1) } else { seg = q; q = "" }
+    if (!((k, acc, seg) in ch)) { ch[k, acc, seg] = 1; nch[k, acc]++ }
+    acc = (acc == "" ? seg : acc "." seg)
+  }
+}
+END {
+  for (r = 1; r <= nk; r++) {
+    line = ""
+    for (f = 1; f <= nf; f++) line = line (f > 1 ? "\t" : "") cell(ord[r], F[f])
+    print line
+  }
+}
+function clean(s) { gsub(/[\t\r\n]+/, " ", s); return s }
+function fmtv(v, fmt) {
+  if (fmt == "time") return isotime(v)
+  if (fmt == "ms") return mstime(v)
+  if (fmt == "bytes") return hbytes(v)
+  if (fmt == "arn") return shortarn(v)
+  if (fmt == "yesno") return v == "true" ? "yes" : (v == "false" ? "no" : v)
+  if (fmt == "lower") return tolower(v)
+  return v
+}
+function cell(k, spec,   fmt, c, alts, na, a, al, v, n, j, sb, base, out) {
+  fmt = ""; c = index(spec, ":"); if (c) { fmt = substr(spec, c + 1); spec = substr(spec, 1, c - 1) }
+  na = split(spec, alts, "|")
+  for (a = 1; a <= na; a++) {
+    al = alts[a]
+    if (al == "@key") return fmtv(k, fmt)
+    if (substr(al, 1, 1) == "=") return substr(al, 2)
+    if (substr(al, 1, 1) == "#") return nch[k, substr(al, 2)] + 0
+    c = index(al, "[]")
+    if (c) {
+      base = substr(al, 1, c - 1); sb = substr(al, c + 2); n = nch[k, base] + 0; out = ""; split("", dup)
+      for (j = 0; j < n; j++) {
+        v = ((k, base "." j sb) in val) ? clean(unesc(val[k, base "." j sb])) : ""
+        if (v != "" && !(v in dup)) { dup[v] = 1; out = out (out == "" ? "" : ",") v }
+      }
+      if (out != "") return fmtv(out, fmt)
+      continue
+    }
+    if ((k, al) in val) { v = val[k, al]; if (v != "null" && v != "\"\"") return fmtv(clean(unesc(v)), fmt) }
+  }
+  return ""
+}
+'
+
+AWK_TABLE='
+BEGIN { FS = "\t"; nh = split(hdr, H, "|"); for (i = 1; i <= nh; i++) W[i] = dwidth(H[i]) }
+{
+  rows[NR] = $0; nc = split($0, c, "\t")
+  for (i = 1; i <= nc; i++) { v = c[i] == "" ? "-" : c[i]; w = dwidth(v); if (w > W[i]) W[i] = w }
+}
+END {
+  n = nh; for (i = 1; i < n; i++) if (W[i] > cap) W[i] = cap
+  line = ""
+  for (i = 1; i <= n; i++) line = line pad(H[i], i < n ? W[i] : 0) (i < n ? "  " : "")
+  print bold line reset
+  for (r = 1; r <= NR; r++) {
+    split(rows[r], c, "\t"); line = ""
+    for (i = 1; i <= n; i++) {
+      v = c[i] == "" ? "-" : c[i]
+      if (i < n) v = clip(v, W[i])
+      line = line pad(v, i < n ? W[i] : 0) (i < n ? "  " : "")
+    }
+    sub(/ +$/, "", line)
+    print line
+  }
+}
+function pad(s, w,   k) { k = w - dwidth(s); while (k-- > 0) s = s " "; return s }
+'
+
+AWK_PRETTY='
+{ tk[++n] = $0 }
+END {
+  ind = 0
+  for (i = 1; i <= n; i++) {
+    t = tk[i]
+    if (t == "{" || t == "[") {
+      if (tk[i + 1] == (t == "{" ? "}" : "]")) { printf "%s%s", t, tk[i + 1]; i++; continue }
+      ind++; printf "%s\n%s", t, sp(ind)
+    } else if (t == "}" || t == "]") { ind--; printf "\n%s%s", sp(ind), t }
+    else if (t == ",") printf ",\n%s", sp(ind)
+    else if (t == ":") printf ": "
+    else printf "%s", t
+  }
+  printf "\n"
+}
+function sp(k,   s) { s = ""; while (k-- > 0) s = s "  "; return s }
+'
+
+json_flat()   { LC_ALL=C grep -E -o "$JSON_TOKENS" | LC_ALL=C awk "$AWK_LIB$AWK_FLAT"; }
+json_pretty() { LC_ALL=C grep -E -o "$JSON_TOKENS" | LC_ALL=C awk "$AWK_PRETTY"; }
+
+# jq-free JSON writers
+jstr() { JS_IN=$1 LC_ALL=C awk "$AWK_LIB"'BEGIN { printf "%s", jesc(ENVIRON["JS_IN"]) }'; }
+# jlist "a, b,c" -> ["a","b","c"]
+jlist() {
+  JS_IN=$1 LC_ALL=C awk "$AWK_LIB"'BEGIN {
+    n = split(ENVIRON["JS_IN"], a, ","); o = ""
+    for (i = 1; i <= n; i++) { v = a[i]; gsub(/^[ \t]+|[ \t]+$/, "", v); if (v != "") o = o (o == "" ? "" : ",") jesc(v) }
+    printf "[%s]", o }'
+}
+urlenc() {
+  JS_IN=$1 LC_ALL=C awk 'BEGIN {
+    for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i
+    s = ENVIRON["JS_IN"]; o = ""
+    for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (c ~ /[A-Za-z0-9._~-]/) o = o c; else o = o sprintf("%%%02X", ord[c]) }
+    printf "%s", o }'
+}
+
+FLAT_OK=false
+flat() {
+  $FLAT_OK && return 0
+  json_flat < "$TMP/body" > "$TMP/flat" 2>/dev/null || : > "$TMP/flat"
+  FLAT_OK=true
+}
+# jget PATH [FLATFILE] — decoded value ("" when missing or null)
+jget() {
+  LC_ALL=C awk -F'\t' -v p="$1" "$AWK_LIB"'$1 == p { print unesc(substr($0, length($1) + 2)); exit }' "${2:-$TMP/flat}"
+}
+# jfirst PATH... — first non-empty value among the paths
+jfirst() {
+  JF_PATHS="$*" LC_ALL=C awk -F'\t' "$AWK_LIB"'
+    BEGIN { n = split(ENVIRON["JF_PATHS"], P, " ") }
+    { v[$1] = substr($0, length($1) + 2) }
+    END { for (i = 1; i <= n; i++) if ((P[i] in v) && v[P[i]] != "null" && v[P[i]] != "\"\"" && v[P[i]] != "{}") { print unesc(v[P[i]]); exit } }' "$TMP/flat"
+}
+# jrows PREFIX SPEC... (reads $TMP/flat, or $JR_FILE)
+jrows() {
+  _jp=$1; shift
+  JR_PRE=$_jp JR_FIELDS="$*" LC_ALL=C awk "$AWK_LIB$AWK_ROWS" "${JR_FILE:-$TMP/flat}"
+}
+# table "H1|H2|..." < TSV rows
+table() { LC_ALL=C awk -v hdr="$1" -v cap="${TABLE_CAP:-60}" -v bold="$C_B" -v reset="$C_0" "$AWK_LIB$AWK_TABLE"; }
+# jcount PREFIX — number of elements of the array/object at PREFIX
+jcount() { jrows "$1" "@key" | grep -c . || true; }
+
+out_json() {
+  if [ -t 1 ]; then json_pretty < "$TMP/body"; else cat "$TMP/body"; printf '\n'; fi
+}
+
+# ---------------------------------------------------------------------------
+# HTTP
+# ---------------------------------------------------------------------------
+
+CURL_SIGV4=""
+curl_sigv4() {
+  if [ -z "$CURL_SIGV4" ]; then
+    if curl --help all 2>/dev/null | grep -q -- '--aws-sigv4'; then CURL_SIGV4=yes; else CURL_SIGV4=no; fi
+  fi
+  [ "$CURL_SIGV4" = yes ]
+}
+
+# http METHOD URL CURL_ARGS... — body in $TMP/body; sets HTTP_STATUS, HTTP_CTYPE, HTTP_RC.
+http() {
+  _hm=$1; _hu=$2; shift 2
+  tmp_init
+  : > "$TMP/body"
+  _hw=$(curl -sS -X "$_hm" -o "$TMP/body" -w '%{http_code}|%{content_type}' \
+        --connect-timeout "${HTTP_CONNECT_TIMEOUT:-5}" -m "${HTTP_TIMEOUT:-60}" "$@" "$_hu" 2>"$TMP/curl.err")
+  HTTP_RC=$?
+  HTTP_STATUS=${_hw%%|*}; HTTP_CTYPE=${_hw#*|}
+  [ -n "$HTTP_STATUS" ] || HTTP_STATUS=000
+  FLAT_OK=false
+  [ "$HTTP_STATUS" != 000 ]
+}
+
+is_json() {
+  case "$HTTP_CTYPE" in *json*) return 0 ;; esac
+  _c=$(LC_ALL=C sed -n '1{s/^[[:space:]]*//;s/^\(.\).*/\1/p;}' "$TMP/body" 2>/dev/null)
+  [ "$_c" = "{" ] || [ "$_c" = "[" ]
+}
+
+# api METHOD PATH [BODY]
+#   API_SIGN=<service>  SigV4-sign for that signing name (account + region come from the access key / scope)
+#   API_UPLOAD=<file>   send the file (application/gzip) as the body
+#   API_TARGET=<target> AWS JSON protocol call (X-Amz-Target)
+#   API_TIMEOUT=<secs>  overall timeout (default 60)
+#   API_SOFT=true       return 3 (unreachable) / 4 (too old) instead of exiting
+# Returns 0 on 2xx, 1 on any other status.
+api() {
+  _am=$1; _ap=$2; _ab=${3-}
+  set -- -H "Accept: application/json" -H "User-Agent: goku-cli/$GOKU_CLI_VERSION"
+  if [ -n "${API_UPLOAD:-}" ]; then
+    set -- "$@" -H "Content-Type: application/gzip" --data-binary "@$API_UPLOAD"
+  elif [ -n "${API_TARGET:-}" ]; then
+    [ -n "$_ab" ] || _ab='{}'
+    set -- "$@" -H "Content-Type: application/x-amz-json-1.1" -H "X-Amz-Target: $API_TARGET" --data-binary "$_ab"
+  elif [ -n "$_ab" ]; then
+    set -- "$@" -H "Content-Type: application/json" --data-binary "$_ab"
+  fi
+  if [ -n "${API_SIGN:-}" ]; then
+    if curl_sigv4; then
+      set -- "$@" --aws-sigv4 "aws:amz:${REGION}:${API_SIGN}" --user "${ACCESS_KEY}:${SECRET_KEY}"
+    else
+      # curl < 7.75: no SigV4. Goku reads the account and region from the credential scope and does
+      # not check signatures unless mimir.validate-signatures is on.
+      _ad=$(date -u +%Y%m%dT%H%M%SZ)
+      set -- "$@" -H "X-Amz-Date: $_ad" -H "Authorization: AWS4-HMAC-SHA256 Credential=${ACCESS_KEY}/${_ad%%T*}/${REGION}/${API_SIGN}/aws4_request, SignedHeaders=host;x-amz-date, Signature=0000000000000000000000000000000000000000000000000000000000000000"
+    fi
+  fi
+  HTTP_TIMEOUT=${API_TIMEOUT:-60}
+  if ! http "$_am" "$ENDPOINT$_ap" "$@"; then
+    [ "${API_SOFT:-false}" = true ] && return 3
+    if [ "$HTTP_RC" = 28 ]; then die "no answer from Goku at $ENDPOINT within ${HTTP_TIMEOUT}s"; fi
+    down
+  fi
+  if is_json; then flat; else : > "$TMP/flat"; FLAT_OK=true; fi
+  case "$_ap" in
+    /_mimir/*)
+      if [ "$HTTP_STATUS" -ge 400 ] && ! is_json; then
+        [ "${API_SOFT:-false}" = true ] && return 4
+        too_old
+      fi ;;
+  esac
+  case "$HTTP_STATUS" in 2??) return 0 ;; esac
+  return 1
+}
+
+down() {
+  _why=$(sed -n '1p' "$TMP/curl.err" 2>/dev/null | sed 's/^curl: ([0-9]*) //')
+  die_code "$EX_DOWN" "cannot reach Goku at $ENDPOINT${_why:+ ($_why)}.
+  Start it with 'goku start', or point the CLI at it with GOKU_ENDPOINT / --endpoint."
+}
+
+backend_version() {
+  if API_SOFT=true api GET /_mimir/health && [ -n "$(jget version)" ]; then jget version; else printf 'unknown'; fi
+}
+
+too_old() {
+  _v=$(backend_version)
+  die_code "$EX_OLD" "$FEATURE: requires Goku ${FEATURE_MIN}+ — the Goku at $ENDPOINT (version $_v) does not have this API.
+  Update it with 'goku update' (or pull a newer image)."
+}
+
+api_error_text() {
+  if is_json; then
+    _em=$(jfirst error.message message Message errorMessage reason error)
+    _ec=$(jfirst error.code code __type Code)
+    _ec=${_ec##*#}
+    if [ -n "$_ec" ] && [ -n "$_em" ]; then printf '%s: %s' "$_ec" "$_em"
+    elif [ -n "$_em$_ec" ]; then printf '%s' "$_em$_ec"
+    else printf 'HTTP %s' "$HTTP_STATUS"; fi
+  else
+    _em=$(sed -n 's:.*<Message>\(.*\)</Message>.*:\1:p' "$TMP/body" | head -1)
+    _ec=$(sed -n 's:.*<Code>\(.*\)</Code>.*:\1:p' "$TMP/body" | head -1)
+    if [ -n "$_em$_ec" ]; then printf '%s: %s' "$_ec" "$_em"; else printf 'HTTP %s' "$HTTP_STATUS"; fi
+  fi
+}
+api_die() { die "$1: $(api_error_text)"; }
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+need_val() { [ $# -ge 2 ] || usage_die "option $1 needs a value"; }
+is_int() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; return 0; }
+now_ms() { printf '%s000' "$(date +%s)"; }
+nap() { sleep "$1" 2>/dev/null || sleep 1; }
+
+# since_ms 10m|2h|1d|30s|<epoch ms> -> epoch ms
+since_ms() {
+  case "$1" in
+    *[!0-9smhdw]*|'') usage_die "invalid time '$1' — use 30s, 10m, 2h, 1d or epoch milliseconds" ;;
+  esac
+  _n=${1%[smhdw]}; _u=${1#"$_n"}
+  is_int "$_n" || usage_die "invalid time '$1'"
+  case "$_u" in
+    s) _k=1 ;; m) _k=60 ;; h) _k=3600 ;; d) _k=86400 ;; w) _k=604800 ;;
+    '') printf '%s' "$_n"; return 0 ;;
+  esac
+  printf '%s' "$(( $(date +%s) - _n * _k ))000"
+}
+
+open_url() {
+  [ -n "$NO_BROWSER" ] && return 0
+  if command -v open >/dev/null 2>&1; then open "$1" >/dev/null 2>&1 || true
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 || true
+  fi
+}
+
+confirm() {
+  # confirm WORD PROMPT — the user types WORD to proceed
+  [ -t 0 ] || return 1
+  printf '%s ' "$2" >&2
+  IFS= read -r _ans || return 1
+  [ "$_ans" = "$1" ]
+}
+
+# ---------------------------------------------------------------------------
+# Docker lifecycle (unchanged behaviour; container/volume/ports configurable)
+# ---------------------------------------------------------------------------
+
+need_docker() {
+  command -v docker >/dev/null 2>&1 || die "Docker is not installed.
+  macOS:  https://docs.docker.com/desktop/  (or: brew install colima docker && colima start)
+  Linux:  https://docs.docker.com/engine/install/"
+  docker info >/dev/null 2>&1 || die "Docker is installed but the daemon isn't running.
+  Start Docker Desktop (or 'colima start' / 'sudo systemctl start docker') and retry."
+  adopt_legacy
+}
+
+# is_goku_image REF: tanujsoni027/goku, its former name tanujsoni027/mimir-aws, or the configured image.
+is_goku_image() {
+  case "${1%@*}" in
+    mimir-aws|mimir-aws:*|*/mimir-aws|*/mimir-aws:*|tanujsoni027/goku|tanujsoni027/goku:*|*/tanujsoni027/goku|*/tanujsoni027/goku:*) return 0 ;;
+  esac
+  [ -n "$1" ] && [ "${1%:*}" = "${IMAGE%:*}" ]
+}
+
+# is_legacy_image REF: the image under its former name, tanujsoni027/mimir-aws.
+is_legacy_image() {
+  case "${1%@*}" in mimir-aws|mimir-aws:*|*/mimir-aws|*/mimir-aws:*) return 0 ;; esac
+  return 1
+}
+
+# adopt_legacy: Mimir is now Goku. With no container named goku (and no GOKU_CONTAINER), a container
+# named mimir that runs a Goku image is this installation's; one of any other image is never touched.
+adopt_legacy() {
+  { $NAME_SET || $LEGACY || [ "$NAME" != "$DEFAULT_NAME" ]; } && return 0
+  docker inspect "$NAME" >/dev/null 2>&1 && return 0
+  _li=$(docker inspect -f '{{.Config.Image}}' "$LEGACY_NAME" 2>/dev/null) || return 0
+  is_goku_image "$_li" || return 0
+  NAME=$LEGACY_NAME; LEGACY=true
+}
+
+# rename_legacy: start renames an adopted container goku, and says so.
+rename_legacy() {
+  $LEGACY || return 0
+  if docker rename "$NAME" "$DEFAULT_NAME" >/dev/null 2>&1; then
+    say "renamed container $NAME → $DEFAULT_NAME (Mimir is now Goku)"
+    NAME=$DEFAULT_NAME; LEGACY=false
+  else
+    err "could not rename the container $NAME to $DEFAULT_NAME; it keeps its former name for now."
+  fi
+}
+
+container_exists()  { docker inspect "$NAME" >/dev/null 2>&1; }
+container_running() { [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = "true" ]; }
+
+port_free() {
+  if command -v nc >/dev/null 2>&1; then ! nc -z 127.0.0.1 "$1" >/dev/null 2>&1
+  else true; fi
+}
+
+wait_healthy() {
+  say "waiting for Goku to come up…"
+  i=0
+  while [ $i -lt 90 ]; do
+    if curl -sf -m 2 "http://localhost:${EDGE_PORT}/_mimir/health" >/dev/null 2>&1 \
+       && curl -sf -m 2 -o /dev/null "http://localhost:${CONSOLE_PORT}/" 2>/dev/null; then
+      return 0
+    fi
+    i=$((i + 1)); sleep 2
+  done
+  return 1
+}
+
+run_container() {
+  set -- -p "${CONSOLE_PORT}:80" -p "${EDGE_PORT}:4566"
+  case "$ENGINE_PORTS" in off|none|"") ;; *) set -- "$@" -p "${ENGINE_PORTS}:${ENGINE_PORTS}" ;; esac
+  # The container is configured with the GOKU_* names: every 4.x image understands them. The volume
+  # is always named: Goku 4.1+ would otherwise use goku-data.
+  [ -n "$AUTO_PERSIST" ] && set -- "$@" -e "GOKU_AUTO_PERSIST=${AUTO_PERSIST}"
+  set -- "$@" -e "GOKU_DATA_VOLUME=${VOLUME}"
+  docker run -d --name "$NAME" "$@" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v /tmp/goku-glue:/tmp/goku-glue \
+    "$IMAGE" >/dev/null
+}
+
+cmd_start() {
+  for _a in "$@"; do case "$_a" in --no-open) NO_BROWSER=1 ;; *) usage_die "unknown option: $_a" ;; esac; done
+  need_docker
+  _note=""
+  if container_exists; then
+    rename_legacy
+    _ci=$(docker inspect -f '{{.Config.Image}}' "$NAME" 2>/dev/null)
+    # A Goku container on another tag or the image's former name starts as it is (update moves it);
+    # GOKU_IMAGE, or an image that is not Goku, has it created again.
+    if [ "$_ci" != "$IMAGE" ] && { $IMAGE_SET || ! is_goku_image "$_ci"; }; then
+      say "found an existing Goku container on a different image — recreating on $IMAGE."
+      say "(your saved state is preserved)"
+      docker rm -f "$NAME" >/dev/null 2>&1 || true
+    elif is_legacy_image "$_ci" && ! is_legacy_image "$IMAGE"; then
+      _note="note: Goku runs $_ci, the image's former name — run goku update to move to ${IMAGE%:*}"
+    fi
+  fi
+  if container_running; then
+    say "Goku is already running — console: http://localhost:${CONSOLE_PORT}"
+    [ -n "$_note" ] && say "$_note"
+    exit 0
+  fi
+  [ -n "$_note" ] && say "$_note"
+  if container_exists; then
+    say "starting existing Goku container…"
+    docker start "$NAME" >/dev/null
+  else
+    for p in "$CONSOLE_PORT" "$EDGE_PORT"; do
+      port_free "$p" || die "port $p is already in use — set GOKU_CONSOLE_PORT / GOKU_EDGE_PORT to change ports."
+    done
+    if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+      say "downloading Goku (first run, ~1 GB)…"
+      docker pull "$IMAGE" || die "could not pull $IMAGE"
+    fi
+    say "starting Goku…"
+    run_container || die "failed to start container"
+  fi
+  if wait_healthy; then
+    say ""
+    say "  Goku is up 🚀"
+    say "  Console:       http://localhost:${CONSOLE_PORT}"
+    say "  AWS endpoint:  http://localhost:${EDGE_PORT}   (region: ${REGION}; any access key works)"
+    say "  Point your tools at it:  eval \"\$(goku env)\""
+    say ""
+    open_url "http://localhost:${CONSOLE_PORT}"
+  else
+    err "Goku did not become healthy in time. Recent logs:"
+    docker logs --tail 25 "$NAME" >&2 2>&1 || true
+    err ""
+    err "If this container came from an older install, try: goku update"
+    exit 1
+  fi
+}
+
+cmd_stop() {
+  need_docker
+  container_exists || { say "Goku is not running."; exit 0; }
+  say "stopping Goku (state is saved automatically)…"
+  docker stop -t 30 "$NAME" >/dev/null || true
+  say "stopped. 'goku start' to resume with all your resources."
+}
+
+cmd_restart() { cmd_stop; cmd_start "$@"; }
+
+cmd_status() {
+  [ $# -eq 0 ] || usage_die "unknown argument: $1"
+  _state=""; _img=""
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 && { adopt_legacy; container_exists; }; then
+    _state=$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null)
+    _img=$(docker inspect -f '{{.Config.Image}}' "$NAME" 2>/dev/null)
+  fi
+  _healthy=false; _ver=""; _running=""; _total=""
+  if API_SOFT=true API_TIMEOUT=3 api GET /_mimir/health; then
+    _healthy=true; _ver=$(jget version)
+    _total=$(jrows services @key | grep -c . || true)
+    _running=$(LC_ALL=C awk -F'\t' '$1 ~ /^services\./ && $2 == "\"running\""' "$TMP/flat" | grep -c . || true)
+  fi
+  if $JSON_OUT; then
+    printf '{"container":%s,"containerState":%s,"image":%s,"endpoint":%s,"console":%s,"healthy":%s,"version":%s,"servicesRunning":%s}\n' \
+      "$(jstr "$NAME")" "$(jstr "$_state")" "$(jstr "$_img")" "$(jstr "$ENDPOINT")" "$(jstr "$CONSOLE_URL")" \
+      "$_healthy" "$(jstr "$_ver")" "${_running:-0}"
+    $_healthy && exit 0 || exit "$EX_DOWN"
+  fi
+  if [ -z "$_state" ] && ! $_healthy; then
+    say "Goku: not running (run 'goku start')"
+    exit 0
+  fi
+  if [ -z "$_state" ]; then say "Container:     none managed by this CLI ($NAME)"
+  elif $LEGACY; then say "Container:     $_state ($NAME, the former name — goku start renames it to $DEFAULT_NAME)"
+  else say "Container:     $_state ($NAME)"; fi
+  if $_healthy; then
+    say "Backend:       healthy (${_running} of ${_total} services running, version ${_ver:-unknown})"
+    say "AWS endpoint:  $ENDPOINT"
+    say "Console:       $CONSOLE_URL"
+  elif [ "$_state" = running ]; then
+    say "Backend:       starting…"
+  fi
+  if [ -n "$_img" ] && is_legacy_image "$_img" && ! is_legacy_image "$IMAGE"; then
+    say "Image:         $_img (the image's former name — run goku update to move to ${IMAGE%:*})"
+  elif [ -n "$_img" ]; then
+    say "Image:         $_img"
+  fi
+  return 0
+}
+
+cmd_update() {
+  need_docker
+  say "checking for updates…"
+  docker pull "$IMAGE" >/dev/null 2>&1 || die "could not pull $IMAGE (offline?)"
+  latest=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null)
+  current=""; _ci=""; _move=false
+  if container_exists; then
+    current=$(docker inspect -f '{{.Image}}' "$NAME" 2>/dev/null)
+    _ci=$(docker inspect -f '{{.Config.Image}}' "$NAME" 2>/dev/null)
+    # The image under its former name moves to the new one, even when both are the same release.
+    is_legacy_image "$_ci" && ! is_legacy_image "$IMAGE" && _move=true
+  fi
+  if [ "$latest" = "$current" ] && ! $_move; then
+    rename_legacy
+    say "already on the newest version."
+    exit 0
+  fi
+  _old=$NAME
+  if container_exists; then
+    say "updating Goku (your resources are preserved)…"
+    docker stop -t 30 "$NAME" >/dev/null 2>&1 || true
+    # Rescue the old container's /app/data into the state volume before
+    # removing it. Makes updates lossless even from images that predate
+    # automatic persistence, and closes the periodic-sync window.
+    if [ "${AUTO_PERSIST:-on}" != off ]; then
+      docker volume create "$VOLUME" >/dev/null 2>&1 || true
+      docker cp "$NAME:/app/data" - 2>/dev/null | docker run --rm -i -v "$VOLUME:/vol" busybox:stable \
+        sh -c 'mkdir -p /x && tar -xf - -C /x 2>/dev/null; if [ -d /x/data ] && [ -n "$(ls -A /x/data 2>/dev/null)" ]; then rm -rf /vol/* /vol/..?* /vol/.[!.]* 2>/dev/null; cp -a /x/data/. /vol/; fi' \
+        >/dev/null 2>&1 || true
+    fi
+    docker rm "$NAME" >/dev/null 2>&1 || true
+    $LEGACY && { NAME=$DEFAULT_NAME; LEGACY=false; }  # created again under the new name
+  else
+    say "downloaded newest image."
+  fi
+  run_container || die "failed to start updated container"
+  if [ "$_old" != "$NAME" ] && $_move; then
+    say "renamed container $_old → $NAME and moved it from $_ci to $IMAGE (Mimir is now Goku)"
+  elif [ "$_old" != "$NAME" ]; then
+    say "renamed container $_old → $NAME (Mimir is now Goku)"
+  elif $_move; then
+    say "moved Goku from $_ci to $IMAGE (Mimir is now Goku)"
+  fi
+  if wait_healthy; then
+    say "updated ✔ — console: http://localhost:${CONSOLE_PORT}"
+  else
+    err "updated container did not become healthy; check 'goku logs'."
+    exit 1
+  fi
+}
+
+cmd_uninstall() {
+  need_docker
+  purge=false
+  [ "${1:-}" = "--purge" ] && purge=true
+  # Engine containers (databases, Lambda environments…) carry the label goku.instance=<id of this
+  # installation>, or mimir.instance on those of Goku 4.0; only those are removed — never other Goku
+  # stacks on the same Docker daemon.
+  _iid=""
+  if container_running && API_SOFT=true API_TIMEOUT=3 api GET /_mimir/health; then _iid=$(jget instanceId); fi
+  if [ -z "$_iid" ] && container_exists; then
+    _iid=$(docker cp "$NAME:/app/data/instance-id" - 2>/dev/null | tar -xOf - 2>/dev/null | tr -d '[:space:]')
+  fi
+  say "removing Goku container…"
+  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  if [ -n "$_iid" ]; then
+    { docker ps -aq --filter "label=goku.instance=$_iid"; docker ps -aq --filter "label=mimir.instance=$_iid"; } \
+      | sort -u | xargs -r docker rm -f >/dev/null 2>&1 || true
+  fi
+  if $purge; then
+    say "removing saved state ($VOLUME volume)…"
+    docker volume rm "$VOLUME" >/dev/null 2>&1 || true
+    say "uninstalled — all state removed."
+  else
+    say "uninstalled. Your data is kept in the '$VOLUME' volume;"
+    say "'goku start' brings everything back, or 'goku uninstall --purge' deletes it."
+  fi
+}
+
+cmd_doctor() {
+  say "goku CLI ${GOKU_CLI_VERSION}"
+  if command -v docker >/dev/null 2>&1; then
+    say "docker:        $(docker --version 2>/dev/null | head -1)"
+    if docker info >/dev/null 2>&1; then say "daemon:        running"; else say "daemon:        NOT RUNNING"; fi
+  else
+    say "docker:        NOT INSTALLED"
+  fi
+  for p in "$CONSOLE_PORT" "$EDGE_PORT"; do
+    if port_free "$p"; then say "port $p:     free"; else say "port $p:     in use"; fi
+  done
+  if docker volume inspect "$VOLUME" >/dev/null 2>&1; then
+    say "saved state:   present ($VOLUME volume)"
+  else
+    say "saved state:   none yet"
+  fi
+  if curl_sigv4; then say "curl:          $(curl --version | head -1 | cut -d' ' -f1-2) (SigV4 signing)"
+  else say "curl:          $(curl --version 2>/dev/null | head -1 | cut -d' ' -f1-2) (no --aws-sigv4: requests carry an unsigned credential scope)"; fi
+  if API_SOFT=true API_TIMEOUT=3 api GET /_mimir/health; then
+    say "endpoint:      $ENDPOINT — reachable (version $(jget version))"
+    _feat=""
+    for _f in "ready:/_mimir/ready?engines=false" "snapshots:/_mimir/state/snapshots" "chaos:/_mimir/chaos" \
+              "iam-enforcement:/_mimir/iam/enforcement" "lambda-debug:/_mimir/lambda/debug"; do
+      _fp=${_f#*:}
+      _sign=""; case "$_fp" in /_mimir/iam/*) _sign=iamlab ;; /_mimir/lambda/*) _sign=lambda ;; esac
+      API_SIGN=$_sign API_SOFT=true API_TIMEOUT=10 api GET "$_fp"; _rc=$?
+      if [ $_rc -eq 0 ] || { [ $_rc -eq 1 ] && [ "$HTTP_STATUS" = 503 ]; }; then _feat="$_feat ${_f%%:*}"
+      else _feat="$_feat ${_f%%:*}(missing)"; fi
+    done
+    say "features:      ${_feat# }  (Goku 4.0+)"
+  else
+    say "endpoint:      $ENDPOINT — not reachable"
+  fi
+}
+
+cmd_version() {
+  if $JSON_OUT; then
+    printf '{"cli":%s,"image":%s}\n' "$(jstr "$GOKU_CLI_VERSION")" "$(jstr "$IMAGE")"
+    return 0
+  fi
+  say "goku CLI ${GOKU_CLI_VERSION} (formerly Mimir)"
+  say "image: ${IMAGE}"
+}
+
+# ---------------------------------------------------------------------------
+# open — the console, a service page, or a resource
+# ---------------------------------------------------------------------------
+
+console_path() {
+  _svc=$1; _res=${2:-}
+  case "$_svc" in
+    ""|home|console) printf '/' ;;
+    resources|resource-center) printf '/resources' ;;
+    snapshots) printf '/resources?tab=snapshots' ;;
+    chaos|faults|fault-injection|faultinjection) printf '/faultinjection' ;;
+    services|subscriptions) printf '/services' ;;
+    iam-lab|lab) printf '/iam/lab' ;;
+    enforcement|iam-enforcement) printf '/iam/activity/enforcement' ;;
+    denied|access-denied) printf '/iam/activity/denied' ;;
+    generate-policy|least-privilege) printf '/iam/activity/generate' ;;
+    iam-tests|tests) printf '/iam/tests' ;;
+    s3) [ -n "$_res" ] && printf '/s3/%s' "$(urlenc "$_res")" || printf '/s3' ;;
+    dynamodb|ddb) [ -n "$_res" ] && printf '/dynamodb/%s' "$(urlenc "$_res")" || printf '/dynamodb' ;;
+    lambda) [ -n "$_res" ] && printf '/lambda?fn=%s' "$(urlenc "$_res")" || printf '/lambda' ;;
+    stepfunctions|sfn|states) printf '/states' ;;
+    cloudwatch|metrics) printf '/metrics' ;;
+    cloudwatch-logs|logs) printf '/logs' ;;
+    secretsmanager|secrets) printf '/secrets' ;;
+    eventbridge|events) printf '/events' ;;
+    cognito-idp|cognito) printf '/cognito' ;;
+    elbv2|elb) printf '/elb' ;;
+    *) printf '/%s' "$_svc" ;;
+  esac
+}
+
+cmd_open() {
+  _print=false; _svc=""; _res=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --print) _print=true; shift ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) if [ -z "$_svc" ]; then _svc=$1; elif [ -z "$_res" ]; then _res=$1; else usage_die "too many arguments"; fi; shift ;;
+    esac
+  done
+  _url="$(strip_slash "$CONSOLE_URL")$(console_path "$_svc" "$_res")"
+  if $JSON_OUT; then printf '{"url":%s}\n' "$(jstr "$_url")"; else say "console: $_url"; fi
+  $_print || open_url "$_url"
+}
+
+# ---------------------------------------------------------------------------
+# env — AWS SDK / CLI environment for the local cloud
+# ---------------------------------------------------------------------------
+
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+cmd_env() {
+  _shell=sh; _unset=false
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --shell) need_val "$@"; _shell=$2; shift 2 ;;
+      --fish) _shell=fish; shift ;;
+      --unset) _unset=true; shift ;;
+      *) usage_die "unknown argument: $1" ;;
+    esac
+  done
+  _vars="AWS_ENDPOINT_URL=$ENDPOINT
+AWS_ACCESS_KEY_ID=$ACCESS_KEY
+AWS_SECRET_ACCESS_KEY=$SECRET_KEY
+AWS_REGION=$REGION
+AWS_DEFAULT_REGION=$REGION"
+  if $JSON_OUT; then
+    printf '{'
+    _first=true
+    printf '%s\n' "$_vars" | while IFS= read -r _l; do
+      $_first || printf ','
+      printf '%s:%s' "$(jstr "${_l%%=*}")" "$(jstr "${_l#*=}")"
+      _first=false
+    done
+    printf '}\n'
+    return 0
+  fi
+  case "$_shell" in
+    sh|bash|zsh|ksh|dash) ;;
+    fish) ;;
+    *) usage_die "unsupported shell '$_shell' (sh, bash, zsh or fish)" ;;
+  esac
+  [ -t 1 ] && printf '# Goku at %s — load with: eval "$(goku env)"\n' "$ENDPOINT"
+  printf '%s\n' "$_vars" | while IFS= read -r _l; do
+    _k=${_l%%=*}; _v=${_l#*=}
+    if [ "$_shell" = fish ]; then
+      if $_unset; then printf 'set -e %s;\n' "$_k"; else printf 'set -gx %s %s;\n' "$_k" "$(shq "$_v")"; fi
+    else
+      if $_unset; then printf 'unset %s\n' "$_k"; else printf 'export %s=%s\n' "$_k" "$(shq "$_v")"; fi
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
+# services + ready
+# ---------------------------------------------------------------------------
+
+cmd_services() {
+  FEATURE="Service subscriptions"; FEATURE_MIN="4.0"
+  _sub=list
+  case "${1:-}" in list|ls|subscribe|add|unsubscribe|remove|rm|presets) _sub=$1; shift ;; esac
+  case "$_sub" in
+    list|ls) services_list "$@" ;;
+    presets) services_presets "$@" ;;
+    subscribe|add) services_change subscribe "$@" ;;
+    unsubscribe|remove|rm) services_change unsubscribe "$@" ;;
+  esac
+}
+
+services_list() {
+  _only=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --subscribed) _only=subscribed; shift ;;
+      --available|--unsubscribed) _only=unsubscribed; shift ;;
+      *) usage_die "unknown argument: $1" ;;
+    esac
+  done
+  api GET /_mimir/subscriptions || api_die "could not list services"
+  if $JSON_OUT; then out_json; return 0; fi
+  _rows=$(jrows services id name category subscribed:yesno status footprint typicalMemoryMb)
+  case "$_only" in
+    subscribed) _rows=$(printf '%s\n' "$_rows" | awk -F'\t' '$4 == "yes"') ;;
+    unsubscribed) _rows=$(printf '%s\n' "$_rows" | awk -F'\t' '$4 != "yes"') ;;
+  esac
+  [ -n "$_rows" ] && printf '%s\n' "$_rows" | table "ID|NAME|CATEGORY|SUBSCRIBED|STATUS|FOOTPRINT|MEMORY MB"
+  say ""
+  say "$(jget summary.subscribed) of $(jget summary.total) services subscribed · backend heap $(jget jvm.heapUsedMb) MB used of $(jget jvm.heapMaxMb) MB"
+  say "Presets: $(jrows presets id | tr '\n' ' ')— 'goku services subscribe <id|preset>'"
+}
+
+services_presets() {
+  api GET /_mimir/subscriptions || api_die "could not list presets"
+  if $JSON_OUT; then
+    printf '['; jrows presets id name "services[]" | awk -F'\t' "$AWK_LIB"'{ printf "%s{\"id\":%s,\"name\":%s,\"services\":%s}", (NR > 1 ? "," : ""), jesc($1), jesc($2), "[" jl($3) "]" }
+      function jl(s,  a, n, i, o) { n = split(s, a, ","); o = ""; for (i = 1; i <= n; i++) o = o (i > 1 ? "," : "") jesc(a[i]); return o }'
+    printf ']\n'; return 0
+  fi
+  TABLE_CAP=40 jrows presets id name "services[]" | table "PRESET|NAME|SERVICES"
+}
+
+services_change() {
+  _action=$1; shift
+  _wait=true; _ids=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --no-wait) _wait=false; shift ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) _ids="$_ids $1"; shift ;;
+    esac
+  done
+  [ -n "$_ids" ] || usage_die "name at least one service id or preset (see 'goku services list')"
+  api GET /_mimir/subscriptions || api_die "could not list services"
+  _presets=" $(jrows presets id | tr '\n' ' ') "
+  _rc=0; _out=""
+  for _id in $_ids; do
+    _q=""; $_wait && _q="?wait=true"
+    if [ "$_action" = subscribe ]; then
+      case "$_presets" in
+        *" $_id "*) _path="/_mimir/subscriptions/presets/$(urlenc "$_id")$_q"; _m=POST ;;
+        *) _path="/_mimir/subscriptions/$(urlenc "$_id")$_q"; _m=POST ;;
+      esac
+    else
+      _path="/_mimir/subscriptions/$(urlenc "$_id")$_q"; _m=DELETE
+    fi
+    if API_TIMEOUT=300 api "$_m" "$_path"; then
+      if $JSON_OUT; then _out="$_out${_out:+,}$(cat "$TMP/body")"; continue; fi
+      _st=$(jfirst status service.status)
+      case "$_presets" in
+        *" $_id "*) [ "$_action" = subscribe ] && { say "subscribed preset $_id"; continue; } ;;
+      esac
+      if [ "$_action" = subscribe ]; then say "subscribed $_id${_st:+ ($_st)}"; else say "unsubscribed $_id${_st:+ ($_st)}"; fi
+    else
+      err "$_id: $(api_error_text)"; _rc=$EX_FAIL
+    fi
+  done
+  $JSON_OUT && printf '[%s]\n' "$_out"
+  return $_rc
+}
+
+cmd_ready() {
+  FEATURE="The readiness API"
+  _svcs=""; _wait=0; _subscribe=false; _engines=""; _quiet=false
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --services|-s) need_val "$@"; _svcs="$_svcs${_svcs:+,}$2"; shift 2 ;;
+      --wait|-w) need_val "$@"; is_int "$2" || usage_die "--wait takes seconds"; _wait=$2; shift 2 ;;
+      --subscribe) _subscribe=true; shift ;;
+      --no-engines) _engines=false; shift ;;
+      --quiet|-q) _quiet=true; shift ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) _svcs="$_svcs${_svcs:+,}$1"; shift ;;
+    esac
+  done
+  _deadline=$(( $(date +%s) + _wait ))
+  while :; do
+    _left=$(( _deadline - $(date +%s) )); [ $_left -lt 0 ] && _left=0
+    _sw=$_left; [ $_sw -gt 300 ] && _sw=300
+    _q="wait=$_sw"
+    [ -n "$_svcs" ] && _q="$_q&services=$(urlenc "$_svcs")"
+    [ -n "$_engines" ] && _q="$_q&engines=false"
+    _m=GET
+    $_subscribe && { _m=POST; _q="$_q&subscribe=true"; }
+    API_SOFT=true API_TIMEOUT=$(( _sw + 60 )) api "$_m" "/_mimir/ready?$_q"; _rc=$?
+    case $_rc in
+      3) if [ "$(date +%s)" -lt "$_deadline" ]; then nap 1; continue; fi; down ;;
+      4) too_old ;;
+    esac
+    if [ "$HTTP_STATUS" = 400 ]; then die_code "$EX_USAGE" "$(api_error_text)"; fi
+    if [ "$HTTP_STATUS" = 503 ] && [ "$(date +%s)" -lt "$_deadline" ]; then nap 1; continue; fi
+    break
+  done
+  if $JSON_OUT; then out_json; else
+    if [ "$(jget ready)" = true ]; then
+      $_quiet || say "${C_G}ready${C_0} — $(jrows services @key | tr '\n' ' ' | sed 's/ $//' | sed 's/ /, /g')"
+    else
+      say "${C_R}not ready${C_0}: $(jget reason)"
+      $_quiet || { jrows services @key name subscribed:yesno status reason | awk -F'\t' '$4 != "active" || $5 != ""' | table "SERVICE|NAME|SUBSCRIBED|STATUS|REASON"; }
+    fi
+  fi
+  [ "$(jget ready)" = true ] || exit "$EX_FAIL"
+}
+
+# ---------------------------------------------------------------------------
+# snapshot — /_mimir/state
+# ---------------------------------------------------------------------------
+
+snap_poll() {
+  # snap_poll OPID VERB — waits for a save/restore/reset operation
+  _op=$1; _verb=$2; _shown=false
+  while :; do
+    api GET "/_mimir/state/operations/$_op" || api_die "could not read operation $_op"
+    _st=$(jget status)
+    case "$_st" in
+      SUCCEEDED|FAILED) break ;;
+    esac
+    if [ -t 2 ] && ! $JSON_OUT; then
+      printf '\r  %s… %-38s %3s%%' "$_verb" "$(jget phase)" "$(jget progress)" >&2; _shown=true
+    fi
+    nap 0.5
+  done
+  $_shown && printf '\r%72s\r' "" >&2
+  if [ "$_st" = FAILED ]; then
+    $JSON_OUT && out_json
+    die "$_verb failed: $(jfirst error.message error errorCode) "
+  fi
+}
+
+snap_warnings() {
+  jrows warnings @key | while IFS= read -r _i; do note "  warning: $(jget "warnings.$_i")"; done
+}
+
+cmd_snapshot() {
+  FEATURE="Environment snapshots"
+  _sub=${1:-list}; [ $# -gt 0 ] && shift
+  case "$_sub" in
+    save) snap_save "$@" ;;
+    restore) snap_restore "$@" ;;
+    list|ls) snap_list "$@" ;;
+    show|info|describe) snap_show "$@" ;;
+    export) snap_export "$@" ;;
+    import) snap_import "$@" ;;
+    delete|rm) snap_delete "$@" ;;
+    reset) snap_reset "$@" ;;
+    *) usage_die "unknown snapshot command: $_sub" ;;
+  esac
+}
+
+snap_save() {
+  _name=""; _desc=""; _svcs=""; _accts=""; _engine=true; _subs=false; _over=false; _wait=true
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --description|-d) need_val "$@"; _desc=$2; shift 2 ;;
+      --services|-s) need_val "$@"; _svcs=$2; shift 2 ;;
+      --accounts) need_val "$@"; _accts=$2; shift 2 ;;
+      --no-engine-data) _engine=false; shift ;;
+      --subscriptions) _subs=true; shift ;;
+      --overwrite|-f) _over=true; shift ;;
+      --no-wait) _wait=false; shift ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) [ -z "$_name" ] || usage_die "one snapshot name only"; _name=$1; shift ;;
+    esac
+  done
+  [ -n "$_name" ] || usage_die "name the snapshot: goku snapshot save <name>"
+  _body="{\"name\":$(jstr "$_name"),\"includeEngineData\":$_engine,\"includeSubscriptions\":$_subs,\"overwrite\":$_over"
+  [ -n "$_desc" ] && _body="$_body,\"description\":$(jstr "$_desc")"
+  [ -n "$_svcs" ] && _body="$_body,\"services\":$(jlist "$_svcs")"
+  [ -n "$_accts" ] && _body="$_body,\"accounts\":$(jlist "$_accts")"
+  _body="$_body}"
+  if ! api POST /_mimir/state/snapshots "$_body"; then
+    [ "$(jget error.code)" = SnapshotAlreadyExists ] && die "a snapshot named '$_name' exists — pass --overwrite to replace it"
+    api_die "could not save snapshot '$_name'"
+  fi
+  _op=$(jget id)
+  if ! $_wait; then
+    if $JSON_OUT; then out_json; else say "saving '$_name' — operation $_op (check: goku snapshot show $_name)"; fi
+    return 0
+  fi
+  snap_poll "$_op" "saving"
+  if $JSON_OUT; then out_json; return 0; fi
+  say "saved snapshot ${C_B}$_name${C_0} — $(jget result.sizeBytes | awk "$AWK_LIB"'{print hbytes($1)}'), $(jcount result.services) services, $(jget durationMs) ms$( [ "$(jget result.includeEngineData)" = true ] && printf ', with engine data')"
+  snap_warnings
+}
+
+snap_restore() {
+  _name=""; _svcs=""; _subs=""; _wait=true
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --services|-s) need_val "$@"; _svcs=$2; shift 2 ;;
+      --subscriptions) _subs=true; shift ;;
+      --no-subscriptions) _subs=false; shift ;;
+      --no-wait) _wait=false; shift ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) [ -z "$_name" ] || usage_die "one snapshot name only"; _name=$1; shift ;;
+    esac
+  done
+  [ -n "$_name" ] || usage_die "name the snapshot: goku snapshot restore <name>"
+  _body="{"
+  [ -n "$_svcs" ] && _body="$_body\"services\":$(jlist "$_svcs")"
+  [ -n "$_subs" ] && _body="$_body${_svcs:+,}\"includeSubscriptions\":$_subs"
+  _body="$_body}"
+  api POST "/_mimir/state/snapshots/$(urlenc "$_name")/restore" "$_body" || api_die "could not restore '$_name'"
+  _op=$(jget id)
+  if ! $_wait; then
+    if $JSON_OUT; then out_json; else say "restoring '$_name' — operation $_op"; fi
+    return 0
+  fi
+  snap_poll "$_op" "restoring"
+  if $JSON_OUT; then out_json; return 0; fi
+  say "restored ${C_B}$_name${C_0}${_svcs:+ ($_svcs)} in $(jget durationMs) ms"
+  snap_warnings
+}
+
+snap_list() {
+  [ $# -eq 0 ] || usage_die "unknown argument: $1"
+  api GET /_mimir/state/snapshots || api_die "could not list snapshots"
+  if $JSON_OUT; then out_json; return 0; fi
+  if [ "$(jcount snapshots)" = 0 ]; then say "No snapshots yet — save one with: goku snapshot save <name>"; return 0; fi
+  jrows snapshots name sizeBytes:bytes createdAt:time "#services" includeEngineData:yesno scope description \
+    | TABLE_CAP=48 table "NAME|SIZE|CREATED (UTC)|SERVICES|ENGINE DATA|SCOPE|DESCRIPTION"
+  _p=$(jget snapshotsPath); [ -n "$_p" ] && note "${C_D}stored in $_p (inside Goku)${C_0}"
+  return 0
+}
+
+snap_show() {
+  [ $# -eq 1 ] || usage_die "usage: goku snapshot show <name>"
+  api GET "/_mimir/state/snapshots/$(urlenc "$1")" || api_die "could not read snapshot '$1'"
+  if $JSON_OUT; then out_json; return 0; fi
+  _pre=""; [ -n "$(jget manifest.name)" ] && _pre="manifest."
+  say "${C_B}$(jfirst "${_pre}name" name)${C_0}  $(jfirst "${_pre}description" description)"
+  say "  created:      $(jfirst "${_pre}createdAt" createdAt | awk "$AWK_LIB"'{print isotime($0)}') UTC by Goku $(jfirst "${_pre}mimirVersion" mimirVersion)"
+  say "  size:         $(jfirst sizeBytes "${_pre}totalBytes" | awk "$AWK_LIB"'{print hbytes($1)}')"
+  say "  engine data:  $(jfirst "${_pre}options.includeEngineData" includeEngineData)   subscriptions: $(jfirst "${_pre}options.includeSubscriptions" includeSubscriptions)"
+  say "  accounts:     $(jrows "${_pre}accounts" @key | while IFS= read -r _i; do jget "${_pre}accounts.$_i"; done | tr '\n' ' ')"
+  say ""
+  jrows "${_pre}services" "id|@key" entries bytes:bytes captureLevel | table "SERVICE|ENTRIES|BYTES|CAPTURE"
+  _nres=$(jcount "${_pre}resources")
+  if [ "$_nres" != 0 ]; then
+    say ""
+    jrows "${_pre}resources" service id captureLevel method note | table "SERVICE|RESOURCE|CAPTURE|METHOD|NOTE"
+  fi
+  jrows "${_pre}warnings" @key | while IFS= read -r _i; do note "  warning: $(jget "${_pre}warnings.$_i")"; done
+}
+
+snap_export() {
+  _name=""; _out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      -o|--output) need_val "$@"; _out=$2; shift 2 ;;
+      -*) [ "$1" = - ] && { _out=-; shift; continue; }; usage_die "unknown option: $1" ;;
+      *) [ -z "$_name" ] || usage_die "one snapshot name only"; _name=$1; shift ;;
+    esac
+  done
+  [ -n "$_name" ] || usage_die "usage: goku snapshot export <name> [-o file.tar.gz]"
+  [ -n "$_out" ] || _out="./$_name.tar.gz"
+  tmp_init
+  HTTP_TIMEOUT=3600
+  if ! http GET "$ENDPOINT/_mimir/state/snapshots/$(urlenc "$_name")/export"; then down; fi
+  if [ "$HTTP_STATUS" != 200 ]; then
+    if is_json; then flat; api_die "could not export '$_name'"; fi
+    too_old
+  fi
+  if [ "$_out" = - ]; then cat "$TMP/body"; return 0; fi
+  cp "$TMP/body" "$_out" || die "could not write $_out"
+  _sz=$(wc -c < "$_out" | tr -d ' ')
+  if $JSON_OUT; then printf '{"name":%s,"file":%s,"bytes":%s}\n' "$(jstr "$_name")" "$(jstr "$_out")" "$_sz"; return 0; fi
+  say "exported $_name → $_out ($(printf '%s' "$_sz" | awk "$AWK_LIB"'{print hbytes($1)}'))"
+}
+
+snap_import() {
+  _file=""; _name=""; _over=false; _restore=false
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --name|-n) need_val "$@"; _name=$2; shift 2 ;;
+      --overwrite|-f) _over=true; shift ;;
+      --restore) _restore=true; shift ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) [ -z "$_file" ] || usage_die "one archive only"; _file=$1; shift ;;
+    esac
+  done
+  [ -n "$_file" ] || usage_die "usage: goku snapshot import <file.tar.gz> [--name n] [--overwrite] [--restore]"
+  [ -f "$_file" ] || die "no such file: $_file"
+  _q="overwrite=$_over&restore=$_restore&wait=false"
+  [ -n "$_name" ] && _q="$_q&name=$(urlenc "$_name")"
+  API_UPLOAD=$_file API_TIMEOUT=3600 api POST "/_mimir/state/snapshots/import?$_q" || api_die "could not import $_file"
+  _iname=$(jget name); _op=$(jget restore.id)
+  if [ -n "$_op" ]; then
+    snap_poll "$_op" "restoring"
+    if $JSON_OUT; then out_json; return 0; fi
+    say "imported and restored ${C_B}$_iname${C_0} in $(jget durationMs) ms"
+    return 0
+  fi
+  if $JSON_OUT; then out_json; return 0; fi
+  say "imported ${C_B}$_iname${C_0} ($(jget sizeBytes | awk "$AWK_LIB"'{print hbytes($1)}'), $(jcount services) services) — restore it with: goku snapshot restore $_iname"
+}
+
+snap_delete() {
+  [ $# -ge 1 ] || usage_die "usage: goku snapshot delete <name>..."
+  _rc=0
+  for _n in "$@"; do
+    if api DELETE "/_mimir/state/snapshots/$(urlenc "$_n")"; then
+      $JSON_OUT || say "deleted $_n"
+    else
+      err "$_n: $(api_error_text)"; _rc=$EX_FAIL
+    fi
+  done
+  $JSON_OUT && printf '{"deleted":%s}\n' "$(jlist "$(printf '%s,' "$@")")"
+  return $_rc
+}
+
+snap_reset() {
+  _svcs=""; _accts=""; _yes=false; _wait=true
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --services|-s) need_val "$@"; _svcs=$2; shift 2 ;;
+      --accounts) need_val "$@"; _accts=$2; shift 2 ;;
+      --yes|-y) _yes=true; shift ;;
+      --no-wait) _wait=false; shift ;;
+      *) usage_die "unknown argument: $1" ;;
+    esac
+  done
+  if ! $_yes; then
+    _what="EVERY service in every account"
+    [ -n "$_svcs" ] && _what="$_svcs"
+    [ -n "$_accts" ] && _what="$_what (accounts $_accts)"
+    confirm reset "This deletes all resources of $_what. Type 'reset' to continue:" \
+      || die_code "$EX_USAGE" "not confirmed — pass --yes to reset without a prompt"
+  fi
+  _body="{"
+  [ -n "$_svcs" ] && _body="$_body\"services\":$(jlist "$_svcs")"
+  [ -n "$_accts" ] && _body="$_body${_svcs:+,}\"accounts\":$(jlist "$_accts")"
+  _body="$_body}"
+  api POST /_mimir/state/reset "$_body" || api_die "could not reset"
+  _op=$(jget id)
+  if ! $_wait; then
+    if $JSON_OUT; then out_json; else say "resetting — operation $_op"; fi
+    return 0
+  fi
+  snap_poll "$_op" "resetting"
+  if $JSON_OUT; then out_json; return 0; fi
+  say "reset ${_svcs:-everything}${_accts:+ in $_accts} in $(jget durationMs) ms"
+}
+
+# ---------------------------------------------------------------------------
+# chaos — /_mimir/chaos
+# ---------------------------------------------------------------------------
+
+cmd_chaos() {
+  FEATURE="Fault injection"
+  _sub=${1:-status}; [ $# -gt 0 ] && shift
+  case "$_sub" in
+    status) chaos_status "$@" ;;
+    list|presets) chaos_list "$@" ;;
+    preset|start) chaos_preset "$@" ;;
+    stop) chaos_stop "$@" ;;
+    panic) chaos_panic "$@" ;;
+    events) chaos_events "$@" ;;
+    *) usage_die "unknown chaos command: $_sub" ;;
+  esac
+}
+
+chaos_status() {
+  api GET /_mimir/chaos || api_die "could not read fault injection status"
+  if $JSON_OUT; then out_json; return 0; fi
+  if [ "$(jget active)" = true ]; then _state="${C_R}ACTIVE${C_0}"; else _state="${C_G}inactive${C_0}"; fi
+  say "Fault injection: $_state — $(jget activeRules) active rules, $(jget runningExperiments) running experiments, $(jget totalInjections) injections"
+  [ "$(jget enabled)" = false ] && say "  (disabled by configuration: GOKU_FAULT_INJECTION_ENABLED=false)"
+  api GET /_mimir/chaos/experiments || api_die "could not list experiments"
+  _running=$(jrows experiments id presetId name state endsAt:time | awk -F'\t' '$4 == "RUNNING"')
+  if [ -n "$_running" ]; then
+    say ""
+    printf '%s\n' "$_running" | table "EXPERIMENT|PRESET|NAME|STATE|ENDS (UTC)"
+  fi
+  api GET /_mimir/chaos/rules || api_die "could not list rules"
+  _rules=$(jrows rules id name service effect.type probability status injections | awk -F'\t' '$6 == "ACTIVE" || $6 == "SCHEDULED"')
+  if [ -n "$_rules" ]; then
+    say ""
+    printf '%s\n' "$_rules" | table "RULE|NAME|SERVICE|EFFECT|PROBABILITY|STATUS|INJECTIONS"
+  fi
+}
+
+chaos_list() {
+  api GET /_mimir/chaos/presets || api_die "could not list presets"
+  if $JSON_OUT; then out_json; return 0; fi
+  jrows presets id defaultDurationSeconds "rules[].effect.type" description | awk -F'\t' 'BEGIN{OFS="\t"} { $2 = int($2 / 60) " min"; print }' \
+    | TABLE_CAP=44 table "PRESET|DEFAULT|EFFECTS|DESCRIPTION"
+  note ""
+  note "start one: goku chaos preset <preset> [--minutes N]    stop everything: goku chaos panic"
+}
+
+chaos_preset() {
+  _id=""; _secs=""; _prob=""
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --minutes|-m) need_val "$@"; is_int "$2" || usage_die "--minutes takes a whole number"; _secs=$(( $2 * 60 )); shift 2 ;;
+      --seconds) need_val "$@"; is_int "$2" || usage_die "--seconds takes a whole number"; _secs=$2; shift 2 ;;
+      --probability|-p) need_val "$@"; _prob=$2; shift 2 ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) [ -z "$_id" ] || usage_die "one preset at a time"; _id=$1; shift ;;
+    esac
+  done
+  [ -n "$_id" ] || usage_die "name a preset (see 'goku chaos list')"
+  _body="{"
+  [ -n "$_secs" ] && _body="$_body\"durationSeconds\":$_secs"
+  [ -n "$_prob" ] && _body="$_body${_secs:+,}\"probability\":$_prob"
+  _body="$_body}"
+  api POST "/_mimir/chaos/presets/$(urlenc "$_id")" "$_body" || api_die "could not start preset '$_id'"
+  if $JSON_OUT; then out_json; return 0; fi
+  say "${C_Y}started${C_0} $(jget name) — experiment $(jget id), until $(jget endsAt | awk "$AWK_LIB"'{print isotime($0)}') UTC"
+  note "stop it: goku chaos stop $(jget id)    watch it: goku chaos events --follow"
+}
+
+chaos_stop() {
+  _target=${1:-}
+  api GET /_mimir/chaos/experiments || api_die "could not list experiments"
+  _ids=$(jrows experiments id presetId state | awk -F'\t' -v t="$_target" '$3 == "RUNNING" && (t == "" || $1 == t || $2 == t) { print $1 }')
+  if [ -z "$_ids" ]; then
+    if [ -n "$_target" ]; then die "no running experiment '$_target' (see 'goku chaos status')"; fi
+    $JSON_OUT && { printf '{"stopped":[]}\n'; return 0; }
+    say "no experiment is running."
+    return 0
+  fi
+  _done=""
+  for _e in $_ids; do
+    api POST "/_mimir/chaos/experiments/$_e/stop" '{}' || api_die "could not stop $_e"
+    _done="$_done${_done:+,}$_e"
+    $JSON_OUT || say "stopped $_e ($(jget name))"
+  done
+  $JSON_OUT && printf '{"stopped":%s}\n' "$(jlist "$_done")"
+  return 0
+}
+
+chaos_panic() {
+  api POST /_mimir/chaos/panic '{}' || api_die "panic failed"
+  if $JSON_OUT; then out_json; return 0; fi
+  _r=$(jfirst rulesDeleted deletedRules rules deleted)
+  _x=$(jfirst experimentsStopped stoppedExperiments experiments stopped)
+  say "${C_G}panic button pressed${C_0} — every fault rule removed${_r:+ ($_r)}, every running experiment stopped${_x:+ ($_x)}."
+}
+
+chaos_events() {
+  _limit=50; _follow=false; _rule=""; _exp=""
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --limit|-n) need_val "$@"; is_int "$2" || usage_die "--limit takes a number"; _limit=$2; shift 2 ;;
+      --follow|-f) _follow=true; shift ;;
+      --rule) need_val "$@"; _rule=$2; shift 2 ;;
+      --experiment) need_val "$@"; _exp=$2; shift 2 ;;
+      *) usage_die "unknown argument: $1" ;;
+    esac
+  done
+  _q="limit=$_limit"
+  [ -n "$_rule" ] && _q="$_q&ruleId=$(urlenc "$_rule")"
+  [ -n "$_exp" ] && _q="$_q&experimentId=$(urlenc "$_exp")"
+  api GET "/_mimir/chaos/events?$_q" || api_die "could not read events"
+  if $JSON_OUT && ! $_follow; then out_json; return 0; fi
+  _last=$(jget lastEventSeq)
+  if ! $_follow; then
+    if [ "$(jcount events)" = 0 ]; then say "No fault injections recorded."; return 0; fi
+    # newest first from the API; print oldest first like a log
+    chaos_event_rows | table "SEQ|TIME (UTC)|EFFECT|CODE|SERVICE|OPERATION|RESOURCE|DETAIL"
+    return 0
+  fi
+  [ -t 2 ] && note "following fault injections at $ENDPOINT (Ctrl-C to stop)…"
+  chaos_event_lines
+  while :; do
+    nap 1
+    api GET "/_mimir/chaos/events?limit=1000&after=${_last:-0}${_rule:+&ruleId=$(urlenc "$_rule")}${_exp:+&experimentId=$(urlenc "$_exp")}" || api_die "could not read events"
+    _n=$(jget lastEventSeq); [ -n "$_n" ] && _last=$_n
+    chaos_event_lines
+  done
+}
+
+# Events of the last response, oldest first, as TSV.
+chaos_event_rows() {
+  jrows events seq "time|at:time" effect "code|httpStatus" service operation "resource|path" detail \
+    | awk '{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }'
+}
+
+# Events as log lines (or JSON lines with --json).
+chaos_event_lines() {
+  if $JSON_OUT; then
+    chaos_event_rows | LC_ALL=C awk -F'\t' "$AWK_LIB"'{
+      printf "{\"seq\":%s,\"at\":%s,\"effect\":%s,\"code\":%s,\"service\":%s,\"operation\":%s,\"resource\":%s,\"detail\":%s}\n",
+        $1, jesc($2), jesc($3), jesc($4), jesc($5), jesc($6), jesc($7), jesc($8) }'
+  else
+    chaos_event_rows | awk -F'\t' '{ printf "%s  %-16s %-34s %s.%s %s %s\n", $2, $3, ($4 == "" ? "-" : $4), $5, $6, $7, $8 }'
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# iam — enforcement mode, access denied, policy generation, IAM Lab tests
+# ---------------------------------------------------------------------------
+
+cmd_iam() {
+  _sub=${1:-}; [ $# -gt 0 ] && shift
+  case "$_sub" in
+    mode|enforcement) FEATURE="IAM enforcement modes"; iam_mode "$@" ;;
+    denied|access-denied) FEATURE="The IAM access-denied log"; iam_denied "$@" ;;
+    generate-policy|generate) FEATURE="Policy generation from activity"; iam_generate "$@" ;;
+    test|tests) FEATURE="IAM Lab scenarios"; FEATURE_MIN="4.0"; iam_test "$@" ;;
+    "") usage_die "name an iam command: mode, denied, generate-policy or test" ;;
+    *) usage_die "unknown iam command: $_sub" ;;
+  esac
+}
+
+iam_mode() {
+  _mode=""; _scope=""; _reset=false
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      off|OFF|audit|AUDIT|enforce|ENFORCE) _mode=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]'); shift ;;
+      --principals|--principal) need_val "$@"; _scope="{\"type\":\"PRINCIPALS\",\"principalArns\":$(jlist "$2")}"; shift 2 ;;
+      --tag) need_val "$@"
+        _tk=${2%%=*}; _tv=""; case "$2" in *=*) _tv=${2#*=} ;; esac
+        _scope="{\"type\":\"TAG\",\"tagKey\":$(jstr "$_tk")${_tv:+,\"tagValue\":$(jstr "$_tv")}}"; shift 2 ;;
+      --all) _scope='"ALL"'; shift ;;
+      --reset) _reset=true; shift ;;
+      *) usage_die "unknown argument: $1 (modes: off, audit, enforce)" ;;
+    esac
+  done
+  if $_reset; then
+    API_SIGN=iamlab api PUT /_mimir/iam/enforcement '{"reset":true}' || api_die "could not reset the enforcement mode"
+  elif [ -n "$_mode$_scope" ]; then
+    _body="{"
+    [ -n "$_mode" ] && _body="$_body\"mode\":\"$_mode\""
+    [ -n "$_scope" ] && _body="$_body${_mode:+,}\"scope\":$_scope"
+    _body="$_body}"
+    API_SIGN=iamlab api PUT /_mimir/iam/enforcement "$_body" || api_die "could not set the enforcement mode"
+  else
+    API_SIGN=iamlab api GET /_mimir/iam/enforcement || api_die "could not read the enforcement mode"
+  fi
+  if $JSON_OUT; then out_json; return 0; fi
+  _m=$(jget mode)
+  case "$_m" in ENFORCE) _mc="${C_R}ENFORCE${C_0}" ;; AUDIT) _mc="${C_Y}AUDIT${C_0}" ;; *) _mc="${C_G}$_m${C_0}" ;; esac
+  _st=$(jfirst scopeDetail.type scope)
+  _sd="all principals"
+  case "$_st" in
+    PRINCIPALS) _sd="principals $(jrows scopeDetail.principalArns @key | while IFS= read -r _i; do jget "scopeDetail.principalArns.$_i"; done | tr '\n' ' ')" ;;
+    TAG) _sd="principals tagged $(jget scopeDetail.tagKey)$( [ -n "$(jget scopeDetail.tagValue)" ] && printf '=%s' "$(jget scopeDetail.tagValue)")" ;;
+  esac
+  say "IAM enforcement: $_mc — scope: $_sd (source: $(jget source); configured default: $(jget configuredMode))"
+  case "$_m" in
+    AUDIT) note "calls are evaluated and would-be denials logged, nothing is blocked — see: goku iam denied" ;;
+    ENFORCE) note "missing permissions fail with AccessDenied like AWS — see: goku iam denied" ;;
+  esac
+  return 0
+}
+
+iam_denied() {
+  _id=""; _q=""; _limit=50
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --principal)
+        # a bare user/role name matches that user's or role's ARN (the API expects an ARN or a pattern)
+        need_val "$@"; _p=$2; case "$_p" in *:*|*/*|*'*'*) ;; *) _p="*/$_p" ;; esac
+        _q="$_q&principal=$(urlenc "$_p")"; shift 2 ;;
+      --since) need_val "$@"; _q="$_q&since=$(urlenc "$2")"; shift 2 ;;
+      --until) need_val "$@"; _q="$_q&until=$(urlenc "$2")"; shift 2 ;;
+      --action) need_val "$@"; _q="$_q&action=$(urlenc "$2")"; shift 2 ;;
+      --mode) need_val "$@"; _q="$_q&mode=$(printf '%s' "$2" | tr '[:lower:]' '[:upper:]')"; shift 2 ;;
+      --limit|-n) need_val "$@"; is_int "$2" || usage_die "--limit takes a number"; _limit=$2; shift 2 ;;
+      --account) need_val "$@"; _q="$_q&account=$(urlenc "$2")"; shift 2 ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) [ -z "$_id" ] || usage_die "one denial id at a time"; _id=$1; shift ;;
+    esac
+  done
+  if [ -n "$_id" ]; then
+    API_SIGN=iamlab api GET "/_mimir/iam/access-denied/$(urlenc "$_id")" || api_die "could not read denial $_id"
+    if $JSON_OUT; then out_json; return 0; fi
+    say "${C_B}$(jget action)${C_0} on $(jget resource) — $( [ "$(jget blocked)" = true ] && printf 'BLOCKED' || printf 'would be denied (audit)') at $(jget at | awk "$AWK_LIB"'{print isotime($0)}') UTC"
+    say "  caller:    $(jget principalArn)  (change: $(jget entityArn))"
+    say "  request:   $(jget service) $(jget operation)  $(jget httpMethod) $(jget path)"
+    say "  decision:  $(jget decision)$( [ "$(jget dependent)" = true ] && printf ' (dependent permission: %s)' "$(jget dependentReason)")"
+    say "  message:   $(jget errorMessage)"
+    [ -n "$(jget cloudTrailEventId)" ] && say "  CloudTrail event: $(jget cloudTrailEventId)"
+    say ""
+    say "${C_B}Fix ($(jget fix.kind))${C_0}: $(jfirst fix.summary fix.description fix.message)"
+    # The statement to add, when the fix has one
+    if LC_ALL=C awk -F'\t' '$1 ~ /^fix\.statement\./' "$TMP/flat" | grep -q .; then fix_statement_pretty; fi
+    jrows fix.notes @key | while IFS= read -r _i; do say "  note: $(jget "fix.notes.$_i")"; done
+    return 0
+  fi
+  API_SIGN=iamlab api GET "/_mimir/iam/access-denied?limit=$_limit$_q" || api_die "could not read the access-denied log"
+  if $JSON_OUT; then out_json; return 0; fi
+  if [ "$(jcount items)" = 0 ]; then
+    say "No access denied recorded (mode: $(jget mode)).$( [ "$(jget mode)" = OFF ] && printf " Turn on auditing with: goku iam mode audit")"
+    return 0
+  fi
+  jrows items at:time blocked principalArn:arn action resource fix.kind id \
+    | awk -F'\t' 'BEGIN{OFS="\t"} { $2 = ($2 == "true" ? "BLOCKED" : "WOULD-DENY"); print }' \
+    | TABLE_CAP=50 table "TIME (UTC)|OUTCOME|PRINCIPAL|ACTION|RESOURCE|FIX|ID"
+  note "$(jget count) shown · $(jget retained) retained in account $(jget accountId) · mode $(jget mode) — details and fix: goku iam denied <id>"
+}
+
+# Pretty-prints the fix statement object of the denial in $TMP/body.
+fix_statement_pretty() {
+  LC_ALL=C grep -E -o "$JSON_TOKENS" "$TMP/body" | LC_ALL=C awk '
+    { tk[++n] = $0 }
+    END {
+      # find "fix" : { ... "statement" : <value> } and print the value tokens
+      for (i = 1; i <= n; i++) if (tk[i] == "\"fix\"" && tk[i + 1] == ":") { start = i + 2; break }
+      if (!start) exit
+      depth = 0
+      for (i = start; i <= n; i++) {
+        if (tk[i] == "{" || tk[i] == "[") depth++
+        else if (tk[i] == "}" || tk[i] == "]") { depth--; if (depth == 0) exit }
+        if (depth == 1 && tk[i] == "\"statement\"" && tk[i + 1] == ":") { j = i + 2; break }
+      }
+      if (!j) exit
+      d = 0
+      for (i = j; i <= n; i++) {
+        print tk[i]
+        if (tk[i] == "{" || tk[i] == "[") d++
+        else if (tk[i] == "}" || tk[i] == "]") d--
+        if (d == 0) exit
+      }
+    }' | LC_ALL=C awk "$AWK_PRETTY"
+}
+
+iam_generate() {
+  _pr=""; _from=""; _to=""; _gran=""; _svcs=""; _ro=false; _out=""; _draft=""; _failed=""
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --principal|-p) need_val "$@"; _pr=$2; shift 2 ;;
+      --since|--from) need_val "$@"; _from=$2; shift 2 ;;
+      --until|--to) need_val "$@"; _to=$2; shift 2 ;;
+      --granularity|-g) need_val "$@"
+        case "$2" in exact|prefix|service) _gran=$2 ;; *) usage_die "--granularity is exact, prefix or service" ;; esac; shift 2 ;;
+      --services|-s) need_val "$@"; _svcs=$2; shift 2 ;;
+      --include-read-only) _ro=true; shift ;;
+      --no-failed-calls) _failed=false; shift ;;
+      --save-draft) need_val "$@"; _draft=$2; shift 2 ;;
+      -o|--output) need_val "$@"; _out=$2; shift 2 ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) [ -z "$_pr" ] || usage_die "one principal at a time"; _pr=$1; shift ;;
+    esac
+  done
+  [ -n "$_pr" ] || usage_die "name the principal: --principal <user/role ARN or name>"
+  _body="{\"principal\":$(jstr "$_pr"),\"includeReadOnlyDescribe\":$_ro"
+  [ -n "$_from" ] && _body="$_body,\"from\":$(jstr "$_from")"
+  [ -n "$_to" ] && _body="$_body,\"to\":$(jstr "$_to")"
+  [ -n "$_gran" ] && _body="$_body,\"granularity\":\"$_gran\""
+  [ -n "$_svcs" ] && _body="$_body,\"services\":$(jlist "$_svcs")"
+  [ -n "$_failed" ] && _body="$_body,\"includeFailedCalls\":false"
+  if [ -n "$_draft" ]; then
+    API_SIGN=iamlab API_TIMEOUT=300 api POST /_mimir/iamlab/generate-policy/draft "$_body,\"name\":$(jstr "$_draft")}" \
+      || api_die "could not generate and save the policy"
+    if $JSON_OUT; then out_json; return 0; fi
+    say "saved as IAM Lab draft $(jfirst id draft.id draftId) ($(jfirst name draft.name)) — open it: goku open iam-lab"
+    return 0
+  fi
+  API_SIGN=iamlab API_TIMEOUT=300 api POST /_mimir/iamlab/generate-policy "$_body}" || api_die "could not generate a policy for $_pr"
+  if $JSON_OUT; then out_json; return 0; fi
+  _nst=$(jcount statements)
+  if [ -n "$_out" ]; then
+    jget document > "$_out" || die "could not write $_out"
+  else
+    jget document
+  fi
+  {
+    note ""
+    note "${C_B}$_nst statements${C_0} for $(jfirst principal.arn principal) from $(jfirst window.callsUsed window.eventsMatched) recorded calls ($(jfirst granularity) granularity, $(jfirst validation.characters) characters)"
+    note "  proof: all observed calls allowed = $(jget verification.allObservedCallsAllowed), minimal = $(jget verification.minimal)"
+    _um=$(jcount unmappedCalls)
+    [ "$_um" != 0 ] && note "  ${C_Y}$_um unmapped call types${C_0} (no IAM action known): $(jrows unmappedCalls eventName | tr '\n' ' ')"
+    jrows warnings @key | while IFS= read -r _i; do note "  warning: $(jget "warnings.$_i")"; done
+    [ -n "$_out" ] && note "  policy written to $_out"
+    [ "$_nst" = 0 ] && note "  no activity recorded for this principal in the window — run your app with its credentials first"
+  }
+  return 0
+}
+
+# Finds the latest IAM Lab snapshot of the caller's LOCAL connection (optionally syncing first).
+iam_lab_snapshot() {
+  _conn=$1; _sync=$2
+  API_SIGN=iamlab api GET /_mimir/iamlab/connections || api_die "could not list IAM Lab connections"
+  if [ -z "$_conn" ]; then
+    _conn=$(jrows items id kind | awk -F'\t' '$2 == "LOCAL" { print $1; exit }')
+  fi
+  if [ -z "$_conn" ]; then
+    $_sync || die "no IAM Lab snapshot yet — rerun with --sync to import this account's IAM (or sync in the console: goku open iam-lab)"
+    API_SIGN=iamlab api POST /_mimir/iamlab/connections '{"kind":"LOCAL","name":"This Goku account (goku CLI)"}' \
+      || api_die "could not create a LOCAL IAM Lab connection"
+    _conn=$(jget id)
+    note "created IAM Lab connection $_conn (LOCAL)"
+  fi
+  if $_sync; then
+    API_SIGN=iamlab api POST "/_mimir/iamlab/connections/$_conn/sync" '{}' || api_die "could not sync $_conn"
+    _job=$(jget id)
+    _i=0
+    while :; do
+      API_SIGN=iamlab api GET "/_mimir/iamlab/connections/$_conn/jobs" || api_die "could not read sync jobs"
+      _js=$(jrows items id status snapshotId | awk -F'\t' -v j="$_job" '$1 == j')
+      case "$(printf '%s' "$_js" | cut -f2)" in
+        COMPLETED|PARTIAL) SNAP=$(printf '%s' "$_js" | cut -f3); [ -n "$SNAP" ] && return 0 ;;
+        FAILED) die "IAM Lab sync failed: $(jget items.0.message)" ;;
+      esac
+      _i=$((_i + 1)); [ $_i -gt 600 ] && die "IAM Lab sync did not finish in time"
+      nap 0.5
+    done
+  fi
+  API_SIGN=iamlab api GET "/_mimir/iamlab/connections/$_conn" || api_die "could not read connection $_conn"
+  SNAP=$(jget latestSnapshotId)
+  [ -n "$SNAP" ] || die "connection $_conn has no snapshot yet — rerun with --sync"
+}
+
+iam_test() {
+  _scn=""; _snap=""; _conn=""; _sync=false; _mode=""; _strict=false; _junit=""; _list=false
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --list|-l) _list=true; shift ;;
+      --snapshot) need_val "$@"; _snap=$2; shift 2 ;;
+      --connection) need_val "$@"; _conn=$2; shift 2 ;;
+      --sync) _sync=true; shift ;;
+      --context-mode) need_val "$@"; _mode=$2; shift 2 ;;
+      --strict) _strict=true; shift ;;
+      --junit) need_val "$@"; _junit=$2; shift 2 ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) [ -z "$_scn" ] || usage_die "one scenario at a time"; _scn=$1; shift ;;
+    esac
+  done
+  API_SIGN=iamlab api GET /_mimir/iamlab/scenarios || api_die "could not list IAM Lab scenarios"
+  if $_list; then
+    if $JSON_OUT; then out_json; return 0; fi
+    if [ "$(jcount items)" = 0 ]; then say "No IAM test scenarios yet — create them in the console: goku open iam-tests"; return 0; fi
+    jrows items id name version "#tests" description | TABLE_CAP=50 table "ID|NAME|VERSION|TESTS|DESCRIPTION"
+    return 0
+  fi
+  [ -n "$_scn" ] || usage_die "name a scenario (id or name) — list them with: goku iam test --list"
+  _sid=$(jrows items id name | awk -F'\t' -v s="$_scn" '$1 == s { print $1; exit }')
+  if [ -z "$_sid" ]; then
+    _matches=$(jrows items id name | awk -F'\t' -v s="$_scn" '$2 == s { print $1 }')
+    case "$(printf '%s' "$_matches" | grep -c .)" in
+      0) die "no IAM test scenario '$_scn' (see: goku iam test --list)" ;;
+      1) _sid=$_matches ;;
+      *) die "several scenarios are named '$_scn' — use its id: $(printf '%s' "$_matches" | tr '\n' ' ')" ;;
+    esac
+  fi
+  SNAP=$_snap
+  [ -n "$SNAP" ] || iam_lab_snapshot "$_conn" "$_sync"
+  _body="{\"target\":{\"snapshotId\":$(jstr "$SNAP")}${_mode:+,\"mode\":$(jstr "$_mode")}}"
+  API_SIGN=iamlab API_TIMEOUT=300 api POST "/_mimir/iamlab/scenarios/$_sid/runs" "$_body" || api_die "could not run scenario $_scn"
+  _pass=$(jget summary.pass); _fail=$(jget summary.fail); _errs=$(jget summary.error); _inc=$(jget summary.incomplete)
+  _bad=$(( ${_fail:-0} + ${_errs:-0} ))
+  $_strict && _bad=$(( _bad + ${_inc:-0} ))
+  [ -n "$_junit" ] && iam_junit "$_junit"
+  if $JSON_OUT; then out_json; else
+    say "Scenario ${C_B}$(jget scenarioName)${C_0} v$(jget scenarioVersion) · snapshot $SNAP · run $(jget id)"
+    say ""
+    jrows results status "testName|testId" principal:arn action resource expected actual error \
+      | awk -F'\t' -v g="$C_G" -v r="$C_R" -v y="$C_Y" -v z="$C_0" 'BEGIN{OFS="\t"} {
+          c = ($1 == "PASS") ? g : (($1 == "FAIL" || $1 == "ERROR") ? r : y); $1 = c $1 z; print }' \
+      | TABLE_CAP=46 table "STATUS|TEST|PRINCIPAL|ACTION|RESOURCE|EXPECTED|ACTUAL|ERROR"
+    say ""
+    _sum="${_pass:-0} passed, ${_fail:-0} failed, ${_errs:-0} errors, ${_inc:-0} incomplete ($(jget summary.total) tests)"
+    if [ "$_bad" -gt 0 ]; then say "${C_R}FAIL${C_0} — $_sum"; else say "${C_G}PASS${C_0} — $_sum"; fi
+    jrows warnings @key | while IFS= read -r _i; do note "warning: $(jget "warnings.$_i")"; done
+    [ -n "$_junit" ] && note "JUnit report: $_junit"
+  fi
+  [ "$_bad" -eq 0 ] || exit "$EX_FAIL"
+}
+
+iam_junit() {
+  jrows results status "testName|testId" principal action resource expected actual error | LC_ALL=C awk -F'\t' \
+    -v suite="$(jget scenarioName)" -v run="$(jget id)" -v total="$(jget summary.total)" \
+    -v fails="$(jget summary.fail)" -v errs="$(jget summary.error)" '
+    function x(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); return s }
+    BEGIN { printf "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n  <testsuite name=\"%s\" tests=\"%d\" failures=\"%d\" errors=\"%d\" id=\"%s\">\n", x(suite), total, fails, errs, x(run) }
+    {
+      name = $2 " [" $3 "]"
+      printf "    <testcase classname=\"%s\" name=\"%s\">", x(suite), x(name)
+      if ($1 == "FAIL") printf "<failure message=\"expected %s, got %s\">%s on %s</failure>", x($6), x($7), x($4), x($5)
+      else if ($1 == "ERROR") printf "<error message=\"%s\"/>", x($8)
+      else if ($1 == "INCOMPLETE") printf "<skipped message=\"incomplete context: %s\"/>", x($7)
+      printf "</testcase>\n"
+    }
+    END { printf "  </testsuite>\n</testsuites>\n" }' > "$1" || die "could not write $1"
+}
+
+# ---------------------------------------------------------------------------
+# lambda debug
+# ---------------------------------------------------------------------------
+
+cmd_lambda() {
+  _sub=${1:-}; [ $# -gt 0 ] && shift
+  case "$_sub" in
+    debug) FEATURE="Lambda debugging"; lambda_debug "$@" ;;
+    "") usage_die "name a lambda command: debug" ;;
+    *) usage_die "unknown lambda command: $_sub" ;;
+  esac
+}
+
+lambda_debug() {
+  _fn=""; _wait=false; _off=false; _qual=""; _tmo=""; _lang=""; _status=false; _launch=false; _list=false
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --wait) _wait=true; shift ;;
+      --off) _off=true; shift ;;
+      --qualifier|-q) need_val "$@"; _qual=$2; shift 2 ;;
+      --timeout) need_val "$@"; is_int "$2" || usage_die "--timeout takes seconds"; _tmo=$2; shift 2 ;;
+      --language) need_val "$@"; _lang=$2; shift 2 ;;
+      --status) _status=true; shift ;;
+      --launch-json) _launch=true; shift ;;
+      --list) _list=true; shift ;;
+      -*) usage_die "unknown option: $1" ;;
+      *) [ -z "$_fn" ] || usage_die "one function at a time"; _fn=$1; shift ;;
+    esac
+  done
+  if $_list; then
+    API_SIGN=lambda api GET /_mimir/lambda/debug || api_die "could not list debug sessions"
+    if $JSON_OUT; then out_json; return 0; fi
+    if [ "$(jcount sessions)" = 0 ]; then say "No function is in debug mode."; return 0; fi
+    jrows sessions functionName qualifier language "debugger.port|port" "environment.phase|phase" waitForDebugger:yesno \
+        "environment.debuggerAttached|debuggerAttached:yesno" \
+      | table "FUNCTION|QUALIFIER|LANGUAGE|PORT|ENVIRONMENT|WAIT|ATTACHED"
+    return 0
+  fi
+  [ -n "$_fn" ] || usage_die "name the function: goku lambda debug <function>"
+  _path="/_mimir/lambda/functions/$(urlenc "$_fn")/debug"
+  if $_status; then
+    API_SIGN=lambda api GET "$_path${_qual:+?qualifier=$(urlenc "$_qual")}" || api_die "could not read debug status of $_fn"
+  else
+    if $_off; then
+      _body="{\"enabled\":false${_qual:+,\"qualifier\":$(jstr "$_qual")}}"
+    else
+      _body="{\"enabled\":true,\"waitForDebugger\":$_wait${_qual:+,\"qualifier\":$(jstr "$_qual")}${_tmo:+,\"timeoutSeconds\":$_tmo}${_lang:+,\"language\":$(jstr "$_lang")}}"
+    fi
+    API_SIGN=lambda api PUT "$_path" "$_body" || api_die "could not change debug mode of $_fn"
+  fi
+  if $JSON_OUT; then out_json; return 0; fi
+  if $_launch; then
+    [ "$(jget enabled)" = true ] || die "debug mode is off for $_fn — turn it on first: goku lambda debug $_fn"
+    jget launchConfigurations.vscodeLaunchJson
+    return 0
+  fi
+  _q=$(jget qualifier)
+  if [ "$(jget enabled)" != true ]; then
+    say "Debug mode ${C_B}off${C_0} for $_fn ($_q)$( [ "$(jget source)" = tag ] && printf ' — the function tags decide')"
+    [ "$(jget supported)" = false ] && say "  not supported: $(jget unsupportedReason)"
+    return 0
+  fi
+  _host=$(jget debugger.host); _port=$(jget debugger.port)
+  say "Debug mode ${C_G}ON${C_0} for ${C_B}$_fn${C_0} ($_q) — $(jget language), $(jget debugger.protocol)"
+  say "  Attach to:     ${C_B}$_host:$_port${C_0}  (container port $(jget debugger.containerPort), bound on $(jget debugger.bindAddress))"
+  _ph=$(jget environment.phase)
+  case "$_ph" in NO_ENVIRONMENT) _ph="not started — starts on the next invocation" ;; esac
+  say "  Environment:   $_ph$( [ "$(jget environment.debuggerAttached)" = true ] && printf ' · debugger attached')"
+  if [ "$(jget waitForDebugger)" = true ]; then
+    say "  Wait:          every invocation waits until a debugger is attached"
+  else
+    say "  Wait:          no — use --wait to hold invocations until you attach"
+  fi
+  say "  Timeout:       $(jget timeoutSeconds) s while debugging (function: $(jget functionTimeoutSeconds) s)"
+  [ -n "$(jget environment.lastError)" ] && say "  Last error:    $(jget environment.lastError)"
+  say ""
+  say "${C_B}VS Code${C_0} — .vscode/launch.json (or: goku lambda debug $_fn --launch-json > .vscode/launch.json):"
+  jget launchConfigurations.vscodeLaunchJson
+  _cli=$(jget launchConfigurations.cli)
+  [ -n "$_cli" ] && { say ""; say "Command line:  $_cli"; }
+  jrows launchConfigurations.notes @key | while IFS= read -r _i; do note "  note: $(jget "launchConfigurations.notes.$_i")"; done
+  note ""
+  note "turn it off: goku lambda debug $_fn --off${_qual:+ --qualifier $_qual}"
+}
+
+# ---------------------------------------------------------------------------
+# logs — container logs, or CloudWatch Logs of a Lambda function / log group
+# ---------------------------------------------------------------------------
+
+cmd_logs() {
+  _group=""; _follow=false; _since=""; _filter=""; _docker=""
+  _has_cw=false
+  for _a in "$@"; do case "$_a" in --lambda|--lambda=*|--group|--group=*) _has_cw=true ;; esac; done
+  if ! $_has_cw; then
+    need_docker
+    container_exists || die "Goku is not running."
+    docker logs "$@" "$NAME"
+    return $?
+  fi
+  FEATURE="CloudWatch Logs"; FEATURE_MIN="4.0"
+  while [ $# -gt 0 ]; do
+    case "$1" in --*=*) _o=${1%%=*}; _v=${1#*=}; shift; set -- "$_o" "$_v" "$@"; continue ;; esac
+    case "$1" in
+      --lambda) need_val "$@"; _group="/aws/lambda/$2"; shift 2 ;;
+      --group) need_val "$@"; _group=$2; shift 2 ;;
+      --follow|-f) _follow=true; shift ;;
+      --since) need_val "$@"; _since=$2; shift 2 ;;
+      --filter) need_val "$@"; _filter=$2; shift 2 ;;
+      *) usage_die "unknown argument: $1" ;;
+    esac
+  done
+  if [ -n "$_since" ]; then _start=$(since_ms "$_since"); elif $_follow; then _start=$(since_ms 5m); else _start=$(since_ms 1h); fi
+  _start0=$_start
+  _seen=""
+  _waited=false
+  _printed=0
+  _limit=$LOGS_PAGE
+  if ! $_follow; then
+    # FilterLogEvents answers an empty page for a missing group: say so instead of printing nothing.
+    API_SIGN=logs API_TARGET=Logs_20140328.DescribeLogGroups api POST / "{\"logGroupNamePrefix\":$(jstr "$_group")}" \
+      || api_die "could not read log groups"
+    jrows logGroups logGroupName | grep -qxF -- "$_group" \
+      || die "no logs for $_group yet (the log group does not exist — has the function run?)"
+  fi
+  [ -t 2 ] && $_follow && note "tailing $_group at $ENDPOINT (Ctrl-C to stop)…"
+  while :; do
+    _body="{\"logGroupName\":$(jstr "$_group"),\"startTime\":$_start,\"limit\":$_limit,\"interleaved\":true${_filter:+,\"filterPattern\":$(jstr "$_filter")}}"
+    if ! API_SIGN=logs API_TARGET=Logs_20140328.FilterLogEvents api POST / "$_body"; then
+      if [ "$(jfirst __type code)" != "" ] && api_error_text | grep -q ResourceNotFound; then
+        if ! $_follow; then die "no logs for $_group yet (the log group does not exist — has the function run?)"; fi
+        $_waited || note "waiting for $_group to be created…"; _waited=true
+        nap 2; continue
+      fi
+      api_die "could not read $_group"
+    fi
+    # print new events, remember the last timestamp and the ids already printed at it
+    _res=$(LS_SEEN=$_seen LC_ALL=C awk -F'\t' -v json="$JSON_OUT" "$AWK_LIB"'
+      BEGIN { n = split(ENVIRON["LS_SEEN"], s, " "); for (i = 1; i <= n; i++) seen[s[i]] = 1 }
+      $1 ~ /^events\.[0-9]+\./ {
+        split($1, p, "."); k = p[2]; f = p[3]; v = substr($0, length($1) + 2)
+        if (!(k in has)) { has[k] = 1; ord[++m] = k }
+        E[k, f] = v
+      }
+      END {
+        last = ""; ids = ""
+        for (j = 1; j <= m; j++) {
+          k = ord[j]; id = unesc(E[k, "eventId"]); ts = E[k, "timestamp"]
+          if (id in seen) continue
+          msg = unesc(E[k, "message"]); sub(/\n+$/, "", msg)
+          if (json == "true") printf "{\"timestamp\":%s,\"time\":%s,\"logStreamName\":%s,\"eventId\":%s,\"message\":%s}\n", ts, jesc(mstime(ts)), E[k, "logStreamName"], E[k, "eventId"], jesc(msg)
+          else printf "%s  %s\n", mstime(ts), msg
+          if (ts != last) { last = ts; ids = "" }
+          ids = ids " " id
+        }
+        printf "#STATE %d %s%s\n", m, last, ids
+      }' "$TMP/flat")
+    _lines=$(printf '%s\n' "$_res" | sed '$d')
+    if [ -n "$_lines" ]; then printf '%s\n' "$_lines"; _printed=1; fi
+    _state=$(printf '%s\n' "$_res" | sed -n '$p')
+    _count=$(printf '%s' "$_state" | cut -d' ' -f2)
+    _lt=$(printf '%s' "$_state" | cut -d' ' -f3)
+    if [ -n "$_lt" ]; then
+      if [ "$_lt" = "$_start" ]; then _seen="$_seen $(printf '%s' "$_state" | cut -d' ' -f4-)"
+      else _start=$_lt; _seen=$(printf '%s' "$_state" | cut -d' ' -f4-); fi
+    fi
+    if [ "${_count:-0}" -ge "$_limit" ]; then
+      # a full page: there may be more. Only old events in it (more events in one millisecond
+      # than a page holds): ask for a bigger page, then move past that millisecond.
+      if [ -z "$_lt" ]; then
+        if [ "$_limit" -lt 10000 ]; then _limit=$((_limit * 4)); [ "$_limit" -gt 10000 ] && _limit=10000
+        else _start=$((_start + 1)); _seen=""; fi
+      fi
+      continue
+    fi
+    _limit=$LOGS_PAGE
+    $_follow || break
+    nap 2
+  done
+  [ "$_printed" = 0 ] && ! $JSON_OUT && note "no log events in $_group since $(printf '%s' "$_start0" | awk "$AWK_LIB"'{print mstime($1)}') UTC"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# help
+# ---------------------------------------------------------------------------
+
+usage() {
+  cat <<EOF
+goku — run a local AWS cloud on your machine (formerly Mimir; the mimir command still works but is deprecated)
+
+Usage: goku <command> [options]        goku help <command> for details
+
+Lifecycle (Docker)
+  start            Start Goku (downloads on first run) and open the console
+  stop             Stop Goku — state is saved automatically
+  restart          Restart Goku
+  status           Show what's running
+  logs [-f]        Container logs; --lambda <fn> [--follow] for a function's CloudWatch logs
+  update           Update to the newest version (resources are preserved)
+  doctor           Check your environment and the backend's features
+  uninstall        Remove Goku ('--purge' also deletes saved state)
+  version          Print versions
+
+Working with a running Goku
+  open [svc [res]] Open the console (a service page, a bucket, a table or a function)
+  env              Print AWS_ENDPOINT_URL etc. for eval "\$(goku env)"
+  services         List, subscribe or unsubscribe services (and presets)
+  ready            Wait until services are ready (CI) — exit 0 when ready
+  snapshot         Save, restore, list, export, import, delete or reset the whole local cloud
+  chaos            Fault injection: presets, stop, panic button, events
+  iam              Enforcement mode, access-denied log, generate-policy, IAM Lab tests
+  lambda debug     Step-through debugging of a Lambda function from your IDE
+
+Global options: --json  --endpoint URL  --console-url URL  --region R  --no-color
+Exit codes: 0 ok · 1 failed / not ready / test failures · 2 usage · 3 Goku unreachable · 4 Goku too old
+
+Console: $CONSOLE_URL · AWS endpoint: $ENDPOINT
+Docs: https://tanuj24.github.io/goku/
+EOF
+}
+
+help_cmd() {
+  case "$1" in
+    start) cat <<'EOF'
+goku start [--no-open]
+  Starts the Goku container (pulling the image on first run), waits until it is healthy and
+  opens the console. State is kept in the mimir-data volume. The Docker socket and /tmp/goku-glue
+  (the work folder of Glue jobs) are mounted into it. Mimir is now Goku: a container named mimir
+  from before (with no goku container) is renamed goku, and one on the image's former name,
+  tanujsoni027/mimir-aws, starts as it is until 'goku update' moves it to tanujsoni027/goku.
+  Env: GOKU_IMAGE (tanujsoni027/goku:latest), GOKU_CONTAINER (goku; when set, nothing is renamed),
+       GOKU_CONSOLE_PORT (8080), GOKU_EDGE_PORT (4566),
+       GOKU_ENGINE_PORTS (5500-5524, "off" to publish none), GOKU_DATA_VOLUME (mimir-data),
+       GOKU_AUTO_PERSIST (off = keep no state), GOKU_NO_BROWSER=1
+       (the former MIMIR_* names work too; GOKU_* wins when both are set)
+EOF
+    ;;
+    stop|restart|update|uninstall|doctor|version) cat <<'EOF'
+goku stop                   stop the container (state is saved)
+goku restart [--no-open]    stop + start
+goku update                 pull the newest image and recreate the container (resources kept)
+goku uninstall [--purge]    remove the container and its engine containers (--purge: the saved state too)
+goku doctor                 check Docker, ports, saved state, curl, the endpoint and its 4.0 features
+goku version [--json]       print the CLI version and image
+EOF
+    ;;
+    status) cat <<'EOF'
+goku status [--json]
+  Container state, backend health (services running, version), endpoint and console URLs.
+  Works for a Goku started any other way too (GOKU_ENDPOINT / --endpoint).
+  --json exits 3 when the endpoint is not reachable.
+EOF
+    ;;
+    logs) cat <<'EOF'
+goku logs [docker logs options]
+  The Goku container's logs (e.g. goku logs -f --tail 100).
+
+goku logs --lambda <function> [--follow] [--since 10m] [--filter text] [--json]
+goku logs --group <log group> [--follow] [--since 10m] [--filter text] [--json]
+  CloudWatch Logs of a Lambda function (/aws/lambda/<function>) or any log group, read through the
+  CloudWatch Logs API (FilterLogEvents). Default window: the last hour (5 minutes with --follow).
+  --since takes 30s, 10m, 2h, 1d or epoch milliseconds. Times are UTC. --json prints one JSON event
+  per line. With --follow the command waits for the group to appear and polls every 2 s.
+EOF
+    ;;
+    open) cat <<'EOF'
+goku open [service|page] [resource] [--print]
+  Opens the console (GOKU_CONSOLE_URL, default http://localhost:8080).
+    goku open                     home
+    goku open sqs                 a service page (any console service id)
+    goku open s3 my-bucket        a bucket          goku open dynamodb orders    a table
+    goku open lambda my-fn        a function
+    pages: resources, snapshots, chaos, services, iam-lab, enforcement, denied, generate-policy, iam-tests
+  --print only prints the URL (also: GOKU_NO_BROWSER=1).
+EOF
+    ;;
+    env) cat <<'EOF'
+goku env [--shell sh|bash|zsh|fish] [--fish] [--unset] [--json]
+  Prints the environment that points the AWS CLI and SDKs at Goku:
+    eval "$(goku env)"                  bash / zsh / sh
+    goku env --fish | source            fish
+    eval "$(goku env --unset)"          back to real AWS
+  Sets AWS_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_DEFAULT_REGION
+  from GOKU_ENDPOINT, GOKU_ACCESS_KEY_ID / GOKU_SECRET_ACCESS_KEY (test/test) and GOKU_REGION.
+EOF
+    ;;
+    services) cat <<'EOF'
+goku services [list] [--subscribed|--available] [--json]
+goku services presets [--json]
+goku services subscribe <id|preset>... [--no-wait]
+goku services unsubscribe <id>... [--no-wait]
+  Goku runs only the services you subscribe to; unsubscribed services answer SubscriptionRequired.
+  Ids are console ids (s3, dynamodb, lambda, rds, states…); presets: core, serverless, data, …
+  subscribe/unsubscribe wait until the service is active/stopped unless --no-wait.
+EOF
+    ;;
+    ready) cat <<'EOF'
+goku ready [--services s3,sqs,...] [--wait SECONDS] [--subscribe] [--no-engines] [--quiet] [--json]
+  Asks Goku whether the services (default: every subscribed one) can be used right now.
+  Exit 0 when ready, 1 when not ready (after --wait), 2 for unknown service names, 3 when Goku is
+  not reachable. With --wait the command also waits for Goku itself to come up — use it in CI
+  right after starting the container:
+    goku ready --services s3,dynamodb,sqs --wait 120
+  --subscribe subscribes the missing services first; --no-engines skips the Docker check of
+  engine-backed services.  Requires Goku 4.0+.
+EOF
+    ;;
+    snapshot) cat <<'EOF'
+goku snapshot save <name> [--description d] [--services s3,dynamodb] [--accounts id,...]
+                           [--no-engine-data] [--subscriptions] [--overwrite] [--no-wait]
+goku snapshot restore <name> [--services s3,sqs] [--subscriptions|--no-subscriptions] [--no-wait]
+goku snapshot list
+goku snapshot show <name>
+goku snapshot export <name> [-o file.tar.gz | -o -]
+goku snapshot import <file.tar.gz> [--name n] [--overwrite] [--restore]
+goku snapshot delete <name>...
+goku snapshot reset [--services s3,sqs] [--accounts id,...] [--yes] [--no-wait]
+  Environment snapshots of the whole local cloud (every service and account; RDS dumps and EC2
+  filesystems with engine data, on by default). Save/restore/reset show progress and wait.
+  reset asks you to type 'reset' unless --yes (required when stdin is not a terminal).
+  Requires Goku 4.0+.
+EOF
+    ;;
+    chaos) cat <<'EOF'
+goku chaos [status]                         active rules, running experiments, injections
+goku chaos list                             one-click presets
+goku chaos preset <id> [--minutes N] [--probability 0.2]
+goku chaos stop [<experiment id|preset id>] stop one (or every) running experiment
+goku chaos panic                            remove every rule and stop every experiment
+goku chaos events [--limit N] [--follow] [--rule id] [--experiment id]
+  Fault injection: AWS-shaped throttling, errors, latency, timeouts, Lambda cold starts,
+  SQS drops/duplicates, DynamoDB conflicts. Calls from the Goku console are never affected.
+  Requires Goku 4.0+.
+EOF
+    ;;
+    iam) cat <<'EOF'
+goku iam mode [off|audit|enforce] [--principals arn,...|--tag key[=value]|--all] [--reset]
+  Shows or sets IAM enforcement. audit logs would-be denials, enforce fails calls with AccessDenied.
+  --reset goes back to the configured default.
+
+goku iam denied [--principal arn|name] [--since 1h] [--action 's3:*'] [--mode audit|enforce] [--limit N]
+goku iam denied <id>
+  The access-denied log (newest first); with an id: why it was denied and the fix to apply.
+
+goku iam generate-policy --principal <arn|name> [--since 2h] [--until ...] [--granularity exact|prefix|service]
+                          [--services s3,dynamodb] [--include-read-only] [--no-failed-calls] [-o policy.json]
+                          [--save-draft <name>]
+  The least-privilege policy for what the principal actually called (CloudTrail capture). The
+  policy goes to stdout (or -o file); the evidence summary to stderr.
+
+goku iam test <scenario id|name> [--sync] [--snapshot id] [--connection id] [--strict] [--junit file]
+goku iam test --list
+  Runs an IAM Lab test scenario against the latest IAM snapshot of this account (LOCAL connection).
+  --sync imports the current IAM first (creating the LOCAL connection if needed). Exit 1 when a test
+  FAILs or ERRORs (--strict: also INCOMPLETE) — made for CI. --junit writes a JUnit XML report.
+  Requires Goku 4.0+.
+EOF
+    ;;
+    lambda) cat <<'EOF'
+goku lambda debug <function> [--wait] [--qualifier Q] [--timeout SECONDS] [--language node|python|java|ruby|go]
+goku lambda debug <function> --off [--qualifier Q]
+goku lambda debug <function> --status | --launch-json
+goku lambda debug --list
+  Turns on debug mode: the function runs under its language debugger (Node inspector, debugpy,
+  JDWP, rdbg, Delve) on a host port, one environment at a time, with a 15-minute timeout.
+  Prints the attach address and a ready .vscode/launch.json:
+    goku lambda debug orders --wait --launch-json > .vscode/launch.json
+  --wait holds every invocation until a debugger is attached. Requires Goku 4.0+.
+EOF
+    ;;
+    exit-codes) cat <<'EOF'
+0  success (ready, all tests passed)
+1  the operation failed, the API returned an error, not ready, or IAM tests failed
+2  usage error (unknown command/option, unknown service name, unconfirmed reset)
+3  Goku is not reachable at the endpoint
+4  the running Goku is too old for the command (requires Goku 4.0+)
+EOF
+    ;;
+    ""|help) usage ;;
+    *) err "no help for '$1'"; usage; exit "$EX_USAGE" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+# `mimir`, the command's former name, is installed as a link to goku: it behaves exactly the same, and
+# says first on every run, on stderr, that it is deprecated (so `eval "$(mimir env)"`, --json and pipes
+# are unaffected). GOKU_NO_DEPRECATION_NOTICE=1 turns the notice off.
+case "${0##*/}" in
+  [Mm][Ii][Mm][Ii][Rr]|[Mm][Ii][Mm][Ii][Rr].[Ee][Xx][Ee])
+    case "${GOKU_NO_DEPRECATION_NOTICE:-}" in
+      ""|0|false|FALSE|False|no|NO|No)
+        note "note: 'mimir' is deprecated and will be removed in a future release; use 'goku' instead (same commands and options)." ;;
+    esac ;;
+esac
+
+# Global options may appear anywhere: pull them out, keep the rest in order.
+_args=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) JSON_OUT=true ;;
+    --no-color) colors off ;;
+    --endpoint|--console-url|--region)
+      [ $# -ge 2 ] || { err "option $1 needs a value"; exit "$EX_USAGE"; }
+      case "$1" in --endpoint) ENDPOINT=$2 ;; --console-url) CONSOLE_URL=$2 ;; --region) REGION=$2 ;; esac
+      shift ;;
+    --endpoint=*) ENDPOINT=${1#*=} ;;
+    --console-url=*) CONSOLE_URL=${1#*=} ;;
+    --region=*) REGION=${1#*=} ;;
+    *) _args="$_args $(shq "$1")" ;;
+  esac
+  shift
+done
+eval "set -- $_args"
+ENDPOINT=$(strip_slash "$ENDPOINT")
+$JSON_OUT && colors off
+
+CMD=${1:-}
+[ $# -gt 0 ] && shift
+case "$CMD" in
+  service) CMD=services ;;
+  snapshots|snap) CMD=snapshot ;;
+  faults) CMD=chaos ;;
+esac
+case " $* " in
+  *" -h "*|*" --help "*) [ "$CMD" != logs ] && { help_cmd "$CMD"; exit 0; } ;;
+esac
+tmp_init
+
+case "$CMD" in
+  start)     cmd_start "$@" ;;
+  stop)      cmd_stop "$@" ;;
+  restart)   cmd_restart "$@" ;;
+  status)    cmd_status "$@" ;;
+  logs)      cmd_logs "$@" ;;
+  update)    cmd_update "$@" ;;
+  open)      cmd_open "$@" ;;
+  doctor)    cmd_doctor "$@" ;;
+  uninstall) cmd_uninstall "$@" ;;
+  env)       cmd_env "$@" ;;
+  services)  cmd_services "$@" ;;
+  ready)     cmd_ready "$@" ;;
+  snapshot)  cmd_snapshot "$@" ;;
+  chaos)     cmd_chaos "$@" ;;
+  iam)       cmd_iam "$@" ;;
+  lambda)    cmd_lambda "$@" ;;
+  version|-v|--version) cmd_version ;;
+  help)      help_cmd "${1:-}" ;;
+  ""|-h|--help) usage ;;
+  *) err "unknown command: $CMD"; usage >&2; exit "$EX_USAGE" ;;
+esac
