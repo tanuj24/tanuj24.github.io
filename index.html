@@ -11,6 +11,7 @@
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1117">
 <script>
+  document.documentElement.classList.add("js");
   try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
 </script>
 <meta property="og:type" content="website">
@@ -44,6 +45,8 @@
     --muted: #4b5563;
     --faint: #6b7280;
     --accent: #0969da;
+    --accent-2: #7c3aed;
+    --glow: rgba(9, 105, 218, 0.10);
     --nav-bg: rgba(255, 255, 255, 0.86);
     --selection: rgba(9, 105, 218, 0.18);
     --sun: none;
@@ -61,6 +64,8 @@
       --muted: #9aa4b2;
       --faint: #7d8796;
       --accent: #38bdf8;
+      --accent-2: #a78bfa;
+      --glow: rgba(56, 189, 248, 0.12);
       --nav-bg: rgba(13, 17, 23, 0.88);
       --selection: rgba(56, 189, 248, 0.3);
       --sun: block;
@@ -76,6 +81,8 @@
     --muted: #9aa4b2;
     --faint: #7d8796;
     --accent: #38bdf8;
+    --accent-2: #a78bfa;
+    --glow: rgba(56, 189, 248, 0.12);
     --nav-bg: rgba(13, 17, 23, 0.88);
     --selection: rgba(56, 189, 248, 0.3);
     --sun: block;
@@ -146,7 +153,7 @@
   .icon-moon { display: var(--moon); }
 
   /* Hero + About */
-  .hero { padding-top: 72px; padding-bottom: 8px; }
+  .hero { padding-top: 72px; }
   .hero-top { display: flex; gap: 36px; align-items: center; justify-content: space-between; }
   h1 { font-size: clamp(2.2rem, 3.2vw, 3rem); line-height: 1.1; letter-spacing: -0.02em; font-weight: 700; }
   .role { margin-top: 8px; color: var(--muted); font-size: 1.05rem; font-weight: 600; }
@@ -256,9 +263,149 @@
     .job-date { margin-left: 0; width: 100%; }
     section { padding-top: 64px; }
   }
+
+  /* ---------- Motion and visuals ---------- */
+  .grad-text {
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .progress {
+    position: fixed; top: 0; left: 0; z-index: 30;
+    width: 100%; height: 2px;
+    transform-origin: 0 50%;
+    transform: scaleX(var(--scroll, 0));
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  }
+  .nav-links a.active { color: var(--text); background: var(--surface); border-radius: 6px; }
+
+  /* Hero: a live knowledge graph whose data flows into the portrait */
+  .hero {
+    position: relative;
+    isolation: isolate;
+    min-height: min(88vh, 900px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-bottom: 56px;
+  }
+  .hero-canvas {
+    position: absolute; inset: 0; z-index: -1;
+    width: 100%; height: 100%;
+    -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent);
+    mask-image: linear-gradient(to bottom, #000 72%, transparent);
+  }
+  .eyebrow {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--accent);
+    margin-bottom: 18px;
+    min-height: 1.4em;
+  }
+  .eyebrow .caret { display: inline-block; width: 0.55em; height: 1.05em; margin-left: 2px; vertical-align: -0.15em; background: var(--accent); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .hero h1 { font-size: clamp(2.8rem, 7vw, 5.6rem); letter-spacing: -0.035em; line-height: 1.02; }
+  .hero .role { font-size: clamp(1.05rem, 1.6vw, 1.35rem); margin-top: 14px; }
+  .hub { position: relative; flex: none; width: clamp(120px, 13vw, 176px); aspect-ratio: 1; }
+  .hub::before {
+    content: ""; position: absolute; inset: -9px; border-radius: 50%;
+    background: conic-gradient(var(--accent), var(--accent-2), transparent 55%, var(--accent));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+    animation: spin 7s linear infinite;
+  }
+  .hub .portrait { width: 100%; height: 100%; border-radius: 50%; border: 0; box-shadow: 0 20px 60px -20px var(--accent); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .scroll-cue {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    width: 26px; height: 40px; border: 2px solid var(--border); border-radius: 14px;
+  }
+  .scroll-cue::after {
+    content: ""; position: absolute; left: 50%; top: 8px; width: 4px; height: 8px; margin-left: -2px;
+    border-radius: 2px; background: var(--accent); animation: cue 1.8s ease-in-out infinite;
+  }
+  @keyframes cue { 0% { transform: translateY(0); opacity: 1; } 70% { transform: translateY(12px); opacity: 0; } 100% { opacity: 0; } }
+
+  /* Load-in for the hero, reveal-on-scroll for the rest (only with JavaScript) */
+  .js .hero-anim { opacity: 0; animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; animation-delay: var(--d, 0ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+  .js [data-reveal] {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
+    transition-delay: var(--d, 0ms);
+  }
+  .js [data-reveal].in { opacity: 1; transform: none; }
+
+  .h-idx { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--accent); margin-right: 12px; letter-spacing: 0.04em; }
+
+  /* Experience as a timeline that fills while you scroll */
+  .timeline { position: relative; padding-left: 34px; }
+  .tl-track { position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; border-radius: 2px; background: var(--border); }
+  .tl-fill {
+    position: absolute; inset: 0; border-radius: 2px;
+    transform-origin: top; transform: scaleY(var(--tl, 0));
+    background: linear-gradient(var(--accent), var(--accent-2));
+  }
+  .job { position: relative; }
+  .job::before {
+    content: ""; position: absolute; left: -34px; top: 33px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--bg); border: 2px solid var(--border);
+    transition: border-color 0.4s, box-shadow 0.4s, background 0.4s;
+  }
+  .job.lit::before { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 5px var(--glow), 0 0 18px var(--accent); }
+
+  /* Cards light up where the cursor is */
+  .c-card { position: relative; overflow: hidden; transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), border-color 0.35s, opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  .c-card::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.35s;
+    background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), var(--glow), transparent 65%);
+  }
+  .c-card:hover { transform: translateY(-4px); border-color: var(--accent); }
+  .c-card:hover::after { opacity: 1; }
+  .js .c-card[data-reveal].in:hover { transform: translateY(-4px); }
+
+  /* Goku's console settles into place as it scrolls in */
+  .shot-link { display: block; perspective: 1400px; }
+  .project .shot { box-shadow: 0 40px 90px -40px var(--accent); transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  .shot-link:hover .shot { transform: translateY(-4px) scale(1.01); }
+  @supports (animation-timeline: view()) {
+    .js .project .shot { animation: settle linear both; animation-timeline: view(); animation-range: entry 0% cover 45%; }
+    @keyframes settle { from { transform: rotateX(16deg) scale(0.9); opacity: 0.35; } to { transform: none; opacity: 1; } }
+  }
+
+  /* Skills as chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .chip {
+    font-size: 0.82rem; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+    transition: color 0.2s, border-color 0.2s, transform 0.2s;
+  }
+  .chip:hover { color: var(--text); border-color: var(--accent); transform: translateY(-2px); }
+
+  .cta { font-size: clamp(1.6rem, 3.4vw, 2.8rem); line-height: 1.15; letter-spacing: -0.02em; font-weight: 700; max-width: 22ch; margin-bottom: 18px; }
+
+  /* Theme switch: the new theme spreads from the button */
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+
+  @media (max-width: 640px) {
+    .hero { min-height: auto; padding-bottom: 72px; }
+    .timeline { padding-left: 26px; }
+    .tl-track { left: 4px; }
+    .job::before { left: -26px; width: 12px; height: 12px; }
+    .scroll-cue { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .js .hero-anim, .js [data-reveal] { opacity: 1; transform: none; animation: none; transition: none; }
+    .hub::before, .scroll-cue::after, .eyebrow .caret { animation: none; }
+    .js .project .shot { animation: none; }
+  }
 </style>
 </head>
 <body>
+<div class="progress" aria-hidden="true"></div>
 
 <nav aria-label="Site">
   <div class="nav-inner">
@@ -279,27 +426,32 @@
 </nav>
 
 <header id="about" class="hero wrap">
+  <canvas class="hero-canvas" aria-hidden="true"></canvas>
   <div class="hero-top">
     <div>
-      <h1>Tanuj Soni</h1>
-      <p class="role">AI &amp; Data Engineer · Solutions Architect</p>
+      <p class="eyebrow hero-anim" id="eyebrow">raw data → knowledge graph → agents → answers</p>
+      <h1 class="hero-anim" style="--d:120ms">Tanuj Soni</h1>
+      <p class="role hero-anim" style="--d:240ms"><span class="grad-text">AI &amp; Data Engineer · Solutions Architect</span></p>
     </div>
-    <img class="portrait" src="images/profile.jpg" alt="Portrait of Tanuj Soni" width="128" height="128">
+    <div class="hub hero-anim" style="--d:360ms"><img class="portrait" src="images/profile.jpg" alt="Portrait of Tanuj Soni" width="176" height="176"></div>
   </div>
-  <p class="bio">Hi, I'm Tanuj. For 8+ years I've built data platforms, and now the agentic AI systems that run on them. I'm currently a <strong>Lead Software Engineer at TBO.com</strong>; before that I was a Data Solutions Architect at EXL, with earlier years at FranConnect and RxLogix and contract work alongside. Nights and weekends, I build my own products: <strong>Goku</strong>, a local AWS cloud with 87 services in one Docker image, and <strong>WhileWait</strong>, a hiring channel that shows developers open roles while their AI coding agent works. IIT Delhi, class of 2018.</p>
-  <div class="link-row">
+  <p class="bio hero-anim" style="--d:420ms">Hi, I'm Tanuj. For 8+ years I've built data platforms, and now the agentic AI systems that run on them. I'm currently a <strong>Lead Software Engineer at TBO.com</strong>; before that I was a Data Solutions Architect at EXL, with earlier years at FranConnect and RxLogix and contract work alongside. Nights and weekends, I build my own products: <strong>Goku</strong>, a local AWS cloud with 87 services in one Docker image, and <strong>WhileWait</strong>, a hiring channel that shows developers open roles while their AI coding agent works. IIT Delhi, class of 2018.</p>
+  <div class="link-row hero-anim" style="--d:540ms">
     <a href="mailto:tanujsoni027@gmail.com">Email</a>
     <a href="https://github.com/tanuj24" target="_blank" rel="noopener">GitHub</a>
     <a href="https://www.linkedin.com/in/tanujsoni027" target="_blank" rel="noopener">LinkedIn</a>
   </div>
+  <a class="scroll-cue" href="#experience" aria-label="Scroll to experience"></a>
 </header>
 
 <main class="wrap">
 
   <section id="experience">
-    <h2>Experience</h2>
+    <h2 data-reveal><span class="h-idx">01</span>Experience</h2>
+    <div class="timeline">
+    <div class="tl-track" aria-hidden="true"><div class="tl-fill"></div></div>
 
-    <article class="job">
+    <article class="job" data-reveal>
       <div class="job-head">
         <h3><a href="https://tbo.com" target="_blank" rel="noopener">TBO.com (TBO TEK)</a></h3>
         <span class="job-role">Lead Software Engineer</span>
@@ -323,7 +475,7 @@
       <div class="tags"><span class="tag">LangGraph</span><span class="tag">AWS Bedrock</span><span class="tag">Athena</span><span class="tag">Neo4j</span><span class="tag">PostgreSQL</span><span class="tag">DuckDB</span><span class="tag">EKS</span><span class="tag">Python</span></div>
     </article>
 
-    <article class="job">
+    <article class="job" data-reveal>
       <div class="job-head">
         <h3><a href="https://exlservice.com" target="_blank" rel="noopener">EXL Services</a></h3>
         <span class="job-role">Data Solutions Architect</span>
@@ -340,7 +492,7 @@
       <div class="tags"><span class="tag">Spark</span><span class="tag">Kubernetes</span><span class="tag">AWS</span><span class="tag">Databricks</span><span class="tag">Neo4j</span><span class="tag">RAG</span></div>
     </article>
 
-    <article class="job">
+    <article class="job" data-reveal>
       <div class="job-head">
         <h3><a href="https://franconnect.com" target="_blank" rel="noopener">FranConnect</a></h3>
         <span class="job-role">Lead Software Engineer</span>
@@ -355,7 +507,7 @@
       <div class="tags"><span class="tag">AWS Glue</span><span class="tag">PySpark</span><span class="tag">dbt</span><span class="tag">Snowflake</span><span class="tag">Spring Cloud</span><span class="tag">AWS CDK</span></div>
     </article>
 
-    <article class="job">
+    <article class="job" data-reveal>
       <div class="job-head">
         <h3><a href="https://rxlogix.com" target="_blank" rel="noopener">RxLogix</a></h3>
         <span class="job-role">Senior Software Engineer</span>
@@ -370,45 +522,46 @@
       </ul>
       <div class="tags"><span class="tag">Spark</span><span class="tag">AWS Glue</span><span class="tag">PL/SQL</span><span class="tag">Spark MLlib</span><span class="tag">Django</span><span class="tag">MongoDB</span></div>
     </article>
+    </div>
 
   </section>
 
   <section id="consulting">
-    <h2>Consulting</h2>
-    <p class="consulting-note">Contract engagements delivered alongside and between full-time roles.</p>
+    <h2 data-reveal><span class="h-idx">02</span>Consulting</h2>
+    <p class="consulting-note" data-reveal>Contract engagements delivered alongside and between full-time roles.</p>
     <div class="grid-2">
 
-      <article class="c-card">
+      <article class="c-card" data-reveal style="--d:0ms">
         <h3>Crossroads Lease</h3>
         <div class="c-meta"><span class="r">GenAI Engineer</span><span class="d">November 2025 – March 2026</span></div>
         <p>Built RiskAPI, a production FastAPI service for real-time credit scorecard and decision-tree evaluation, re-architected into a layered service with standardized contracts and Salesforce-compatible responses. Added an LLM pipeline that extracts structured credit entities from unstructured applicant documents, cutting manual review and enriching the scoring workflow.</p>
       </article>
 
-      <article class="c-card">
+      <article class="c-card" data-reveal style="--d:90ms">
         <h3>ZS Associates | Client: Johnson &amp; Johnson</h3>
         <div class="c-meta"><span class="r">Tech Lead, Data</span><span class="d">November 2025 – February 2026</span></div>
         <p>Led end-to-end data modeling of a LATAM Medical CRM — dimensional schemas and semantic layers — and migrated legacy SQL-native ETL to AWS. Shipped as a production data product in 4 months with 500+ users onboarded.</p>
       </article>
 
-      <article class="c-card">
+      <article class="c-card" data-reveal style="--d:180ms">
         <h3><a href="https://honeywell.com" target="_blank" rel="noopener">Honeywell</a></h3>
         <div class="c-meta"><span class="r">Scala Engineer</span><span class="d">June 2025 – August 2025</span></div>
         <p>Built an automated unit-testing framework for Spark/Scala jobs processing IoT sensor data, and moved AWS Glue jobs to an auto-scaling execution framework that roughly halved processing cost. Also delivered a supply-chain ETL pipeline powering automated product-inventory recommendations.</p>
       </article>
 
-      <article class="c-card">
+      <article class="c-card" data-reveal style="--d:0ms">
         <h3>Perficient | Client: Worley</h3>
         <div class="c-meta"><span class="r">Data Architect</span><span class="d">June 2024 – June 2025</span></div>
         <p>Architected Spark and AWS Glue pipelines ingesting engineering and construction work packages from source APIs, then migrated the workflows to Airflow with automated on-demand DAG generation. Built a custom framework to run dbt over AWS Glue and RBAC-based BI layers for role-governed access.</p>
       </article>
 
-      <article class="c-card">
+      <article class="c-card" data-reveal style="--d:90ms">
         <h3>Augusta Hitech | Client: Vyaire Medical</h3>
         <div class="c-meta"><span class="r">AWS Data Engineer</span><span class="d">August 2024 – November 2024</span></div>
         <p>Built AWS Glue/Spark pipelines automating BOM order processing, consolidating ERP and vendor sources into Redshift on 15-minute refresh cycles. Curated analytics-ready layers feed QuickSight dashboards and SageMaker demand-forecasting and supply-risk models.</p>
       </article>
 
-      <article class="c-card">
+      <article class="c-card" data-reveal style="--d:180ms">
         <h3>SG Analytics</h3>
         <div class="c-meta"><span class="r">Software Engineer</span><span class="d">June 2024 – September 2024</span></div>
         <p>Designed a FastAPI framework for company-worth and credit-eligibility assessment integrating Moody's data APIs, plus a configurable Python rule engine automating Bank of America's B2B transaction flagging. Hardened the integrations with retry, rate limiting, caching, and audit logging under CI/CD.</p>
@@ -418,15 +571,15 @@
   </section>
 
   <section id="projects" class="project">
-    <h2>Projects</h2>
+    <h2 data-reveal><span class="h-idx">03</span>Projects</h2>
     <div class="proj-grid">
-      <div class="proj-item">
+      <div class="proj-item" data-reveal>
         <p><strong>Goku — a local AWS cloud.</strong> I got tired of needing an AWS bill to prototype cloud architectures, so I built one that runs on a laptop: 87 AWS-compatible services and a web console for 70 of them in one Docker image. Underneath are real engines — PostgreSQL and MySQL, Spark, Flink, Kafka, Airflow, EC2 instances, and Lambda runtimes. Point your SDK at localhost and go. It started life as Mimir.</p>
-        <a href="https://tanuj24.github.io/goku/" target="_blank" rel="noopener"><img class="shot" src="images/goku-console.png" width="1600" height="956" loading="lazy" alt="Goku web console home page listing AWS services running locally"></a>
+        <a class="shot-link" href="https://tanuj24.github.io/goku/" target="_blank" rel="noopener"><img class="shot" src="images/goku-console.png" width="1600" height="956" loading="lazy" alt="Goku web console home page listing AWS services running locally"></a>
         <p class="project-links"><a href="https://tanuj24.github.io/goku/" target="_blank" rel="noopener">Explore Goku →</a></p>
         <div class="tags" style="margin-top:14px;"><span class="tag">Java</span><span class="tag">Quarkus</span><span class="tag">TypeScript</span><span class="tag">React</span><span class="tag">Go</span><span class="tag">Docker</span></div>
       </div>
-      <div class="proj-item">
+      <div class="proj-item" data-reveal>
         <p><strong>WhileWait — tech hiring in the pauses.</strong> A hiring channel that puts recruiters' open roles in front of developers while Claude Code or Codex is working, through a VS Code extension and CLI that hook into each agent's thinking spinner. I built the recruiter portal and APIs (role posting, wallets, human review, auction-based placement, and a public jobs board) and consent-gated candidate sharing: recruiters learn who a developer is only through that developer's revocable opt-in.</p>
         <p class="project-links"><a href="https://whilewait.vercel.app" target="_blank" rel="noopener">Explore WhileWait →</a></p>
         <div class="tags" style="margin-top:14px;"><span class="tag">TypeScript</span><span class="tag">Node.js</span><span class="tag">VS Code extension</span><span class="tag">CLI</span></div>
@@ -435,32 +588,33 @@
   </section>
 
   <section id="skills">
-    <h2>Skills</h2>
+    <h2 data-reveal><span class="h-idx">04</span>Skills</h2>
     <dl class="skills">
-      <div><dt>Agentic AI &amp; LLMs</dt><dd>LangGraph, LangChain, agent orchestration and routing, tool calling, AWS Bedrock (Claude), prompt and context engineering</dd></div>
-      <div><dt>RAG &amp; ontologies</dt><dd>Agentic RAG, knowledge graphs (Neo4j), ontology engineering, property graphs, semantic search (MinHash/LSH), entity resolution</dd></div>
-      <div><dt>AI guardrails</dt><dd>Evaluation harnesses and regression suites, answer grading, model selection and routing, SQL validation, RBAC and row-level security, PII masking</dd></div>
-      <div><dt>Data engineering</dt><dd>Spark, PySpark, Kafka, Airflow, AWS Glue, dbt, Databricks, Delta Lake, lakehouse architectures, batch and streaming ETL</dd></div>
-      <div><dt>Languages</dt><dd>Python, SQL, TypeScript, Java, Scala, C++, PL/SQL</dd></div>
-      <div><dt>Databases</dt><dd>Athena, PostgreSQL, DynamoDB, Redis, DuckDB, Neo4j, Snowflake, BigQuery, Teradata, Oracle, MongoDB</dd></div>
-      <div><dt>Cloud</dt><dd>AWS (Bedrock, EKS, ECS, Lambda, EventBridge), Azure (Entra ID), GCP (BigQuery, Dataproc, Pub/Sub), Kubernetes, Docker, Terraform, AWS CDK</dd></div>
+      <div data-reveal style="--d:0ms"><dt>Agentic AI &amp; LLMs</dt><dd class="chips"><span class="chip">LangGraph</span><span class="chip">LangChain</span><span class="chip">agent orchestration and routing</span><span class="chip">tool calling</span><span class="chip">AWS Bedrock (Claude)</span><span class="chip">prompt and context engineering</span></dd></div>
+      <div data-reveal style="--d:80ms"><dt>RAG &amp; ontologies</dt><dd class="chips"><span class="chip">Agentic RAG</span><span class="chip">knowledge graphs (Neo4j)</span><span class="chip">ontology engineering</span><span class="chip">property graphs</span><span class="chip">semantic search (MinHash/LSH)</span><span class="chip">entity resolution</span></dd></div>
+      <div data-reveal style="--d:160ms"><dt>AI guardrails</dt><dd class="chips"><span class="chip">Evaluation harnesses and regression suites</span><span class="chip">answer grading</span><span class="chip">model selection and routing</span><span class="chip">SQL validation</span><span class="chip">RBAC and row-level security</span><span class="chip">PII masking</span></dd></div>
+      <div data-reveal style="--d:0ms"><dt>Data engineering</dt><dd class="chips"><span class="chip">Spark</span><span class="chip">PySpark</span><span class="chip">Kafka</span><span class="chip">Airflow</span><span class="chip">AWS Glue</span><span class="chip">dbt</span><span class="chip">Databricks</span><span class="chip">Delta Lake</span><span class="chip">lakehouse architectures</span><span class="chip">batch and streaming ETL</span></dd></div>
+      <div data-reveal style="--d:80ms"><dt>Languages</dt><dd class="chips"><span class="chip">Python</span><span class="chip">SQL</span><span class="chip">TypeScript</span><span class="chip">Java</span><span class="chip">Scala</span><span class="chip">C++</span><span class="chip">PL/SQL</span></dd></div>
+      <div data-reveal style="--d:160ms"><dt>Databases</dt><dd class="chips"><span class="chip">Athena</span><span class="chip">PostgreSQL</span><span class="chip">DynamoDB</span><span class="chip">Redis</span><span class="chip">DuckDB</span><span class="chip">Neo4j</span><span class="chip">Snowflake</span><span class="chip">BigQuery</span><span class="chip">Teradata</span><span class="chip">Oracle</span><span class="chip">MongoDB</span></dd></div>
+      <div data-reveal style="--d:0ms"><dt>Cloud</dt><dd class="chips"><span class="chip">AWS (Bedrock, EKS, ECS, Lambda, EventBridge)</span><span class="chip">Azure (Entra ID)</span><span class="chip">GCP (BigQuery, Dataproc, Pub/Sub)</span><span class="chip">Kubernetes</span><span class="chip">Docker</span><span class="chip">Terraform</span><span class="chip">AWS CDK</span></dd></div>
     </dl>
   </section>
 
   <section id="education" class="edu">
-    <h2>Education</h2>
-    <h3>Indian Institute of Technology (IIT), Delhi</h3>
-    <p>B.Tech, Engineering Physics (minor in Computer Science) · 2014 – 2018</p>
-    <p style="margin-top:14px;">Awards: Team Player and Rising Star (FranConnect), 5 Spot Awards (RxLogix).</p>
+    <h2 data-reveal><span class="h-idx">05</span>Education</h2>
+    <h3 data-reveal>Indian Institute of Technology (IIT), Delhi</h3>
+    <p data-reveal>B.Tech, Engineering Physics (minor in Computer Science) · 2014 – 2018</p>
+    <p data-reveal style="margin-top:14px;">Awards: Team Player and Rising Star (FranConnect), 5 Spot Awards (RxLogix).</p>
   </section>
 
 </main>
 
 <footer id="contact">
   <div class="wrap">
-    <h2>Get in touch</h2>
-    <p class="sub">The fastest way to reach me is email — happy to talk data platforms, agentic AI, or Goku.</p>
-    <div class="foot-links">
+    <h2 data-reveal><span class="h-idx">06</span>Get in touch</h2>
+    <p class="cta" data-reveal>Let's talk <span class="grad-text">data platforms and agentic AI</span>.</p>
+    <p class="sub" data-reveal>The fastest way to reach me is email — happy to talk data platforms, agentic AI, or Goku.</p>
+    <div class="foot-links" data-reveal>
       <a href="mailto:tanujsoni027@gmail.com">tanujsoni027@gmail.com</a>
       <a href="https://github.com/tanuj24" target="_blank" rel="noopener">GitHub</a>
       <a href="https://www.linkedin.com/in/tanujsoni027" target="_blank" rel="noopener">LinkedIn</a>
@@ -471,18 +625,236 @@
 
 <script>
   (function () {
-    var root = document.documentElement, button = document.getElementById("theme-toggle");
+    var root = document.documentElement;
+    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    /* Reveal on scroll */
+    var reveals = document.querySelectorAll("[data-reveal]");
+    if (reduce || !("IntersectionObserver" in window)) {
+      reveals.forEach(function (el) { el.classList.add("in"); });
+    } else {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+      reveals.forEach(function (el) { io.observe(el); });
+    }
+
+    /* Theme: follows the device, the button switches it, and the new theme spreads from the button */
+    var button = document.getElementById("theme-toggle");
     var dark = window.matchMedia("(prefers-color-scheme: dark)");
     function current() { return root.getAttribute("data-theme") || (dark.matches ? "dark" : "light"); }
     function label() { button.setAttribute("aria-label", current() === "dark" ? "Switch to light theme" : "Switch to dark theme"); }
     button.addEventListener("click", function () {
       var next = current() === "dark" ? "light" : "dark";
-      root.setAttribute("data-theme", next);
-      try { localStorage.setItem("theme", next); } catch (e) {}
-      label();
+      function apply() {
+        root.setAttribute("data-theme", next);
+        try { localStorage.setItem("theme", next); } catch (e) {}
+        label();
+      }
+      if (reduce || !document.startViewTransition) { apply(); return; }
+      var r = button.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+      var end = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      document.startViewTransition(apply).ready.then(function () {
+        root.animate({ clipPath: ["circle(0px at " + x + "px " + y + "px)", "circle(" + end + "px at " + x + "px " + y + "px)"] },
+          { duration: 650, easing: "cubic-bezier(0.4, 0, 0.2, 1)", pseudoElement: "::view-transition-new(root)" });
+      });
     });
     if (dark.addEventListener) dark.addEventListener("change", label);
     label();
+
+    /* Scroll progress, the experience timeline, and the section in view */
+    var timeline = document.querySelector(".timeline"), jobs = document.querySelectorAll(".job"), ticking = false;
+    function onScroll() {
+      ticking = false;
+      var max = document.documentElement.scrollHeight - innerHeight;
+      root.style.setProperty("--scroll", max > 0 ? Math.min(1, scrollY / max) : 0);
+      if (timeline) {
+        var t = timeline.getBoundingClientRect(), line = innerHeight * 0.6;
+        timeline.style.setProperty("--tl", Math.max(0, Math.min(1, (line - t.top) / t.height)));
+        jobs.forEach(function (job) { job.classList.toggle("lit", job.getBoundingClientRect().top + 40 < line); });
+      }
+    }
+    addEventListener("scroll", function () { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
+    addEventListener("resize", onScroll);
+    onScroll();
+
+    if ("IntersectionObserver" in window) {
+      var links = {};
+      document.querySelectorAll(".nav-links a").forEach(function (a) { links[a.getAttribute("href").slice(1)] = a; });
+      var spy = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          Object.keys(links).forEach(function (id) { links[id].classList.toggle("active", id === e.target.id); });
+        });
+      }, { rootMargin: "-45% 0px -50% 0px" });
+      Object.keys(links).forEach(function (id) { var el = document.getElementById(id); if (el) spy.observe(el); });
+    }
+
+    /* Cards glow where the cursor is */
+    document.querySelectorAll(".c-card").forEach(function (card) {
+      card.addEventListener("pointermove", function (e) {
+        var r = card.getBoundingClientRect();
+        card.style.setProperty("--mx", (e.clientX - r.left) + "px");
+        card.style.setProperty("--my", (e.clientY - r.top) + "px");
+      });
+    });
+
+    /* The line above the name types itself */
+    var eyebrow = document.getElementById("eyebrow");
+    if (eyebrow && !reduce) {
+      var text = eyebrow.textContent, n = 0;
+      eyebrow.textContent = "";
+      var typed = document.createElement("span"), caret = document.createElement("span");
+      caret.className = "caret";
+      eyebrow.appendChild(typed); eyebrow.appendChild(caret);
+      setTimeout(function step() {
+        typed.textContent = text.slice(0, ++n);
+        if (n < text.length) setTimeout(step, text[n - 1] === "→" ? 220 : 38);
+      }, 500);
+    }
+
+    /* Hero: a knowledge graph whose data packets route, hop by hop, into the portrait */
+    var canvas = document.querySelector(".hero-canvas"), hero = document.querySelector(".hero"), hubImg = document.querySelector(".hub");
+    if (!canvas || !canvas.getContext || !hero || !hubImg) return;
+    var ctx = canvas.getContext("2d");
+    var W = 0, H = 0, nodes = [], packets = [], hub = { x: 0, y: 0, r: 0 }, pulse = 0, link = 150;
+    var mouse = { x: -1e4, y: -1e4 }, colors = {}, visible = true, last = 0, spawn = 0, frame = 0;
+
+    function rgb(hex) {
+      hex = hex.replace("#", "");
+      if (hex.length === 3) hex = hex.replace(/./g, "$&$&");
+      var v = parseInt(hex, 16);
+      return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+    }
+    function rgba(c, a) { return "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + a.toFixed(3) + ")"; }
+    function readColors() {
+      var cs = getComputedStyle(root);
+      colors.a = rgb(cs.getPropertyValue("--accent").trim() || "#38bdf8");
+      colors.b = rgb(cs.getPropertyValue("--accent-2").trim() || "#a78bfa");
+    }
+    function fade(x) { // calmer behind the text on the left of wide screens
+      if (W < 800) return 0.55;
+      var t = Math.max(0, Math.min(1, (x - W * 0.18) / (W * 0.45)));
+      return 0.12 + 0.88 * t * t * (3 - 2 * t);
+    }
+    function layout() {
+      var r = hero.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = r.width; H = r.height;
+      canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var p = hubImg.getBoundingClientRect();
+      hub = { x: p.left - r.left + p.width / 2, y: p.top - r.top + p.height / 2, r: p.width / 2 + 9 };
+      link = Math.max(110, Math.min(170, W / 8));
+      var count = Math.round(Math.max(28, Math.min(95, W * H / 15000)));
+      nodes = []; packets = [];
+      for (var i = 0; i < count; i++) {
+        var x = W < 800 ? Math.random() * W : W * (0.12 + 0.88 * Math.sqrt(Math.random()));
+        var y = Math.random() * H;
+        if (Math.hypot(x - hub.x, y - hub.y) < hub.r + 18) { i--; continue; }
+        var a = Math.random() * Math.PI * 2, v = 5 + Math.random() * 9;
+        nodes.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: 1.3 + Math.random() * 1.7 });
+      }
+    }
+    function nextHop(from) { // the neighbour closest to the portrait, or the portrait itself
+      var dHub = Math.hypot(from.x - hub.x, from.y - hub.y);
+      if (dHub < link * 1.4) return hub;
+      var best = null, bestD = dHub;
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (n === from || Math.hypot(n.x - from.x, n.y - from.y) > link) continue;
+        var d = Math.hypot(n.x - hub.x, n.y - hub.y);
+        if (d < bestD) { bestD = d; best = n; }
+      }
+      return best;
+    }
+    function draw(dt) {
+      ctx.clearRect(0, 0, W, H);
+      var i, j, n, m, d, a;
+      for (i = 0; i < nodes.length; i++) {
+        n = nodes[i];
+        if (dt) {
+          n.x += n.vx * dt; n.y += n.vy * dt;
+          if (n.x < 0 || n.x > W) n.vx *= -1;
+          if (n.y < 0 || n.y > H) n.vy *= -1;
+          var dh = Math.hypot(n.x - hub.x, n.y - hub.y);
+          if (dh < hub.r + 16) { n.vx = (n.x - hub.x) / dh * 10; n.vy = (n.y - hub.y) / dh * 10; }
+        }
+      }
+      ctx.lineWidth = 1;
+      for (i = 0; i < nodes.length; i++) {
+        n = nodes[i];
+        for (j = i + 1; j < nodes.length; j++) {
+          m = nodes[j]; d = Math.hypot(n.x - m.x, n.y - m.y);
+          if (d < link) {
+            ctx.strokeStyle = rgba(colors.a, (1 - d / link) * 0.32 * fade((n.x + m.x) / 2));
+            ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.lineTo(m.x, m.y); ctx.stroke();
+          }
+        }
+        d = Math.hypot(n.x - hub.x, n.y - hub.y);
+        if (d < link * 1.4) {
+          ctx.strokeStyle = rgba(colors.b, (1 - d / (link * 1.4)) * 0.45 * fade(n.x));
+          ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.lineTo(hub.x + (n.x - hub.x) / d * hub.r, hub.y + (n.y - hub.y) / d * hub.r); ctx.stroke();
+        }
+        d = Math.hypot(n.x - mouse.x, n.y - mouse.y);
+        if (d < 160) {
+          ctx.strokeStyle = rgba(colors.b, (1 - d / 160) * 0.55);
+          ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.lineTo(mouse.x, mouse.y); ctx.stroke();
+        }
+      }
+      for (i = 0; i < nodes.length; i++) {
+        n = nodes[i]; d = Math.hypot(n.x - mouse.x, n.y - mouse.y);
+        a = Math.min(1, 0.75 * fade(n.x) + (d < 160 ? (1 - d / 160) * 0.6 : 0));
+        ctx.fillStyle = rgba(colors.a, a);
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r + (d < 160 ? 1 : 0), 0, Math.PI * 2); ctx.fill();
+      }
+      for (i = packets.length - 1; i >= 0; i--) {
+        var p = packets[i];
+        if (dt) p.t += dt * 140 / Math.max(20, Math.hypot(p.to.x - p.from.x, p.to.y - p.from.y));
+        if (p.t >= 1) {
+          if (p.to === hub) { pulse = 1; packets.splice(i, 1); continue; }
+          var hop = nextHop(p.to);
+          if (!hop || ++p.hops > 8) { packets.splice(i, 1); continue; }
+          p.from = p.to; p.to = hop; p.t = 0;
+        }
+        var tx = p.to === hub ? hub.x + (p.from.x - hub.x) / Math.hypot(p.from.x - hub.x, p.from.y - hub.y) * hub.r : p.to.x;
+        var ty = p.to === hub ? hub.y + (p.from.y - hub.y) / Math.hypot(p.from.x - hub.x, p.from.y - hub.y) * hub.r : p.to.y;
+        var px = p.from.x + (tx - p.from.x) * p.t, py = p.from.y + (ty - p.from.y) * p.t, f = Math.max(0.35, fade(px));
+        ctx.fillStyle = rgba(colors.b, 0.18 * f); ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = rgba(colors.b, 0.95 * f); ctx.beginPath(); ctx.arc(px, py, 2.2, 0, Math.PI * 2); ctx.fill();
+      }
+      if (pulse > 0.01) {
+        ctx.strokeStyle = rgba(colors.b, pulse * 0.5); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(hub.x, hub.y, hub.r + (1 - pulse) * 26, 0, Math.PI * 2); ctx.stroke();
+        if (dt) pulse *= Math.pow(0.08, dt);
+      }
+    }
+    function loop(now) {
+      frame = 0;
+      if (!visible || document.hidden) return;
+      var dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
+      spawn -= dt;
+      if (spawn <= 0 && nodes.length && packets.length < 24) {
+        spawn = 0.12 + Math.random() * 0.18;
+        var from = nodes[(Math.random() * nodes.length) | 0], to = nextHop(from);
+        if (to) packets.push({ from: from, to: to, t: 0, hops: 0 });
+      }
+      draw(dt);
+      frame = requestAnimationFrame(loop);
+    }
+    function start() { if (!reduce && !frame && visible && !document.hidden) { last = performance.now(); frame = requestAnimationFrame(loop); } }
+
+    readColors(); layout(); draw(0);
+    new MutationObserver(function () { readColors(); if (reduce) draw(0); }).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    if (dark.addEventListener) dark.addEventListener("change", function () { readColors(); if (reduce) draw(0); });
+    var resizeTimer;
+    addEventListener("resize", function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(function () { layout(); draw(0); }, 150); });
+    hero.addEventListener("pointermove", function (e) { var r = hero.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; });
+    hero.addEventListener("pointerleave", function () { mouse.x = mouse.y = -1e4; });
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function (e) { visible = e[0].isIntersecting; start(); }).observe(hero);
+    }
+    document.addEventListener("visibilitychange", start);
+    start();
   })();
 </script>
 </body>
