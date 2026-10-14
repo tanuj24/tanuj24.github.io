@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tanuj Soni — AI/Data Solutions Architect</title>
-<meta name="description" content="I design and build data platforms and AI systems on AWS, Azure, and GCP. Lead Software Engineer at TBO.com and creator of Mimir, a local AWS cloud.">
+<title>Tanuj Soni — AI &amp; Data Engineer, Solutions Architect</title>
+<meta name="description" content="I build data platforms and the agentic AI systems that run on them, on AWS, Azure, and GCP. Lead Software Engineer at TBO.com and creator of Goku, a local AWS cloud.">
 <link rel="canonical" href="https://tanuj24.github.io/">
 <link rel="icon" href="images/favicon.ico">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tanuj24.github.io/">
-<meta property="og:title" content="Tanuj Soni — AI/Data Solutions Architect">
-<meta property="og:description" content="I design and build data platforms and AI systems on AWS, Azure, and GCP. Lead Software Engineer at TBO.com and creator of Mimir, a local AWS cloud.">
+<meta property="og:title" content="Tanuj Soni — AI &amp; Data Engineer, Solutions Architect">
+<meta property="og:description" content="I build data platforms and the agentic AI systems that run on them, on AWS, Azure, and GCP. Lead Software Engineer at TBO.com and creator of Goku, a local AWS cloud.">
 <meta property="og:image" content="https://tanuj24.github.io/images/profile.jpg">
 <meta name="twitter:card" content="summary">
 <script type="application/ld+json">
@@ -18,7 +18,8 @@
   "@context": "https://schema.org",
   "@type": "Person",
   "name": "Tanuj Soni",
-  "jobTitle": "AI/Data Solutions Architect & Solutions Engineer",
+  "jobTitle": "AI & Data Engineer, Solutions Architect",
+  "worksFor": { "@type": "Organization", "name": "TBO.com" },
   "url": "https://tanuj24.github.io/",
   "sameAs": [
     "https://github.com/tanuj24",
@@ -51,7 +52,7 @@
   ::selection { background: rgba(56, 189, 248, 0.3); }
   a { color: var(--accent); text-decoration: none; transition: color 0.15s; }
   a:hover { text-decoration: underline; }
-  img { max-width: 100%; }
+  img { max-width: 100%; height: auto; }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
 
   /* Nav */
@@ -86,7 +87,7 @@
   .nav-links a:hover { color: var(--text); text-decoration: none; }
 
   /* Hero + About */
-  .hero { padding: 72px 0 8px; }
+  .hero { padding-top: 72px; padding-bottom: 8px; }
   .hero-top { display: flex; gap: 36px; align-items: center; justify-content: space-between; }
   h1 { font-size: 2.4rem; line-height: 1.1; letter-spacing: -0.02em; font-weight: 700; }
   .role { margin-top: 8px; color: var(--muted); font-size: 1.05rem; font-weight: 600; }
@@ -125,6 +126,8 @@
   .job-date { color: var(--faint); font-size: 0.85rem; margin-left: auto; white-space: nowrap; }
   .job-intro { color: var(--muted); font-size: 0.93rem; margin-top: 8px; }
   .job ul { list-style: none; margin-top: 10px; }
+  .sub-proj { margin-top: 18px; font-size: 0.95rem; font-weight: 700; color: var(--text); }
+  .sub-proj span { color: var(--faint); font-weight: 600; }
   .job li {
     color: var(--muted);
     font-size: 0.93rem;
@@ -157,6 +160,13 @@
     border-radius: 10px;
   }
   .project-links { margin-top: 18px; font-weight: 600; font-size: 0.95rem; }
+  .proj-item + .proj-item { margin-top: 44px; }
+  .proj-item p + p { margin-top: 12px; }
+
+  /* Skills */
+  .skills { display: grid; grid-template-columns: 190px 1fr; gap: 12px 24px; font-size: 0.93rem; }
+  .skills dt { color: var(--text); font-weight: 600; }
+  .skills dd { color: var(--muted); }
 
   /* Education */
   .edu h3 { font-size: 1.02rem; font-weight: 700; }
@@ -169,10 +179,12 @@
   .foot-note { margin-top: 40px; color: var(--faint); font-size: 0.8rem; }
 
   @media (max-width: 640px) {
-    .hero { padding: 48px 0 8px; }
+    .hero { padding-top: 48px; }
     .hero-top { flex-direction: column-reverse; align-items: flex-start; gap: 24px; }
     .grid-2 { grid-template-columns: 1fr; }
     .job-date { margin-left: 0; width: 100%; }
+    .skills { grid-template-columns: 1fr; gap: 2px; }
+    .skills dd { margin-bottom: 12px; }
   }
 </style>
 </head>
@@ -186,6 +198,7 @@
       <a href="#experience">Experience</a>
       <a href="#consulting">Consulting</a>
       <a href="#projects">Projects</a>
+      <a href="#skills">Skills</a>
       <a href="#contact">Contact</a>
     </div>
   </div>
@@ -195,11 +208,11 @@
   <div class="hero-top">
     <div>
       <h1>Tanuj Soni</h1>
-      <p class="role">AI/Data Solutions Architect &amp; Solutions Engineer</p>
+      <p class="role">AI &amp; Data Engineer · Solutions Architect</p>
     </div>
     <img class="portrait" src="images/profile.jpg" alt="Portrait of Tanuj Soni" width="128" height="128">
   </div>
-  <p class="bio">Hi, I'm Tanuj. I design and build data platforms and AI systems — the pipelines, event-driven backends, and GenAI products that run on AWS, Azure, and GCP. I'm currently a <strong>Lead Software Engineer at TBO.com</strong>; before that I was a Data Solutions Architect at EXL, with earlier years at FranConnect and RxLogix. Alongside full-time roles I've shipped contract work for teams at Johnson &amp; Johnson, Honeywell, Worley, and Bank of America. Nights and weekends, I build <strong>Mimir</strong> — a local AWS cloud that fits 54 services into one Docker image. IIT Delhi, class of 2018.</p>
+  <p class="bio">Hi, I'm Tanuj. For 8+ years I've built data platforms, and now the agentic AI systems that run on them: agent design, ontologies, guardrails and evaluation, all the way to production on AWS, Azure, and GCP. I'm currently a <strong>Lead Software Engineer at TBO.com</strong>, where I built Data IQL, an agentic analytics product that answers business questions in plain English, and the Rebooking Engine, which has added $50M+ in margin. Before that I was a Data Solutions Architect at EXL, with earlier years at FranConnect and RxLogix, and contract work for teams at Johnson &amp; Johnson, Honeywell, Worley, and Bank of America. Nights and weekends, I build <strong>Goku</strong>, a local AWS cloud with 87 services in one Docker image, and <strong>WhileWait</strong>. IIT Delhi, class of 2018.</p>
   <div class="link-row">
     <a href="mailto:tanujsoni027@gmail.com">Email</a>
     <a href="https://github.com/tanuj24" target="_blank" rel="noopener">GitHub</a>
@@ -218,12 +231,22 @@
         <span class="job-role">Lead Software Engineer</span>
         <span class="job-date">March 2026 – Present</span>
       </div>
-      <p class="job-intro">Backend engineering across TBO's core data workflows — ingestion, event-driven processing, and orchestration.</p>
+      <p class="job-intro">I architected and own two products at TBO, from design to production.</p>
+      <h4 class="sub-proj">Data IQL <span>· agentic AI analytics platform</span></h4>
       <ul>
-        <li>Build data ingestion pipelines and event-driven processing flows for high-volume data movement across distributed platforms.</li>
-        <li>Tuned Kafka consumer configuration, schema validation, and job orchestration across repositories — steadier processing and better data quality.</li>
+        <li>Business users query a multi-terabyte AWS Athena warehouse in plain English and get charted answers in under a minute, replacing BI and analyst requests.</li>
+        <li>Designed the LangGraph agent architecture on AWS Bedrock: questions are routed across six modes (data fetch, graph traversal, reasoning, knowledge lookup) with tool calls into Athena, PostgreSQL, the ontology, and the glossary.</li>
+        <li>Engineered the ontology the agents reason over: an AI-drafted, human-maintained glossary drives a property graph of 300+ tables, so new tables are queryable the same day. The glossary runs as a shared service on EKS with Neo4j lineage, Entra SSO, and APIs for other copilots.</li>
+        <li>Built guardrails for generated SQL (fail-closed RBAC and row-level security for seven roles at one SQL-rewriting chokepoint) and a 100+ case regression suite that grades agent answers on every change.</li>
+        <li>Evaluated five LLM configurations and moved to two-tier model routing, about 3x cheaper on simple lookups; a DuckDB cache over Athena cut hot queries from 6–17 s to 26–64 ms.</li>
       </ul>
-      <div class="tags"><span class="tag">Python</span><span class="tag">Kafka</span><span class="tag">AWS Glue</span><span class="tag">ECS</span><span class="tag">S3</span></div>
+      <h4 class="sub-proj">Rebooking Engine <span>· automated cross-supplier rebooking</span></h4>
+      <ul>
+        <li>Re-shops confirmed hotel bookings against alternate suppliers and rebooks equivalent inventory at lower cost: $40K–$60K a day in added margin, $50M+ across 300K+ rebookings.</li>
+        <li>Designed the matching logic that decides when two suppliers' rooms are interchangeable (room type, board, cancellation terms, price), so margin is captured with no guest impact.</li>
+        <li>Scaled it to 550 successful rebookings a day, peaking above 1,000, with an operator console for human-in-the-loop review, approvals, and a full audit trail.</li>
+      </ul>
+      <div class="tags"><span class="tag">LangGraph</span><span class="tag">AWS Bedrock</span><span class="tag">Athena</span><span class="tag">Neo4j</span><span class="tag">PostgreSQL</span><span class="tag">DuckDB</span><span class="tag">EKS</span><span class="tag">Python</span></div>
     </article>
 
     <article class="job">
@@ -234,12 +257,13 @@
       </div>
       <p class="job-intro">Architect on the Comcast and Showmax engagements; Big Data and AWS SME for the Data Architecture CoE.</p>
       <ul>
-        <li>Migrated 185 Informatica workflows to auto-scaling Spark on Kubernetes with a purpose-built accelerator — ~100% faster, delivered in 5 months with a team of 8 (Comcast).</li>
-        <li>Architected a conversational-BI platform that turns natural-language questions into live dashboard outputs (Comcast).</li>
-        <li>Designed a payments reconciliation platform unifying gateways, CRMs, and billing, with RBAC-secured pipelines and real-time finance dashboards (Showmax).</li>
-        <li>Built a GenAI metadata management tool — cataloging, SQL lineage, PII classification — on Neo4j knowledge graphs and RAG.</li>
+        <li>Led architecture of a real-time conversational AI platform that answers natural-language business questions with dynamic BI dashboards, including the ingestion, normalization, and discrepancy-detection pipelines behind it (Comcast).</li>
+        <li>Led a migration accelerator moving 185 Informatica workflows to auto-scaling Spark on Kubernetes, about 100% faster, delivered in 5 months with a team of 8 (Comcast).</li>
+        <li>Designed a GenAI metadata management accelerator (cataloging, SQL lineage, PII classification) on Neo4j knowledge graphs and RAG.</li>
+        <li>Designed a payments reconciliation platform across gateways, CRMs, and billing, with GenAI patterns for discrepancy detection, RBAC, and finance dashboards (Showmax).</li>
+        <li>Wrote solution architectures for client RFPs and built a Spark/YAML no-code ETL framework that runs on Glue, Databricks, or locally.</li>
       </ul>
-      <div class="tags"><span class="tag">Spark</span><span class="tag">Kubernetes</span><span class="tag">AWS</span><span class="tag">Teradata</span><span class="tag">Neo4j</span><span class="tag">RAG</span></div>
+      <div class="tags"><span class="tag">Spark</span><span class="tag">Kubernetes</span><span class="tag">AWS</span><span class="tag">Databricks</span><span class="tag">Neo4j</span><span class="tag">RAG</span></div>
     </article>
 
     <article class="job">
@@ -251,7 +275,7 @@
       <p class="job-intro">Team lead for e-learning analytics modernization and the public API platform.</p>
       <ul>
         <li>Delivered near-real-time training-compliance analytics on AWS Glue, PySpark, Kafka, EventBridge, and S3 data lakes.</li>
-        <li>Migrated legacy ETL to dbt and Snowflake and automated CI/CD with AWS CDK — 30% lower cloud cost.</li>
+        <li>Migrated legacy ETL to dbt and Snowflake and automated CI/CD with AWS CDK — 30% lower cloud cost, and P&amp;L and scorecard ETL down from 1 hour to 10 minutes.</li>
         <li>Consolidated 50+ public APIs into a Spring Cloud microservices architecture, cutting API latency 25%.</li>
       </ul>
       <div class="tags"><span class="tag">AWS Glue</span><span class="tag">PySpark</span><span class="tag">dbt</span><span class="tag">Snowflake</span><span class="tag">Spring Cloud</span><span class="tag">AWS CDK</span></div>
@@ -265,7 +289,7 @@
       </div>
       <p class="job-intro">Data engineering for pharmacovigilance products — serverless pipelines, signal analytics, and clinical data ingestion.</p>
       <ul>
-        <li>Architected a fully serverless AWS ETL pipeline handling 1M+ pharmacovigilance records/day in ~15 minutes, with KMS, Cognito, and PII masking built in.</li>
+        <li>Architected a fully serverless AWS ETL pipeline handling 1M+ pharmacovigilance records a day in about 15 minutes (60% faster), with KMS, Cognito, and PII masking built in.</li>
         <li>Built ML/NLP cleansing for FDA datasets at 95% accuracy — processing time from 5 days to under 15 minutes.</li>
         <li>Optimized EBGM/RR signal scoring in PL/SQL from 20 minutes to under 5 seconds.</li>
         <li>Built Django/Celery services that scaled to 5,000+ concurrent users.</li>
@@ -321,16 +345,37 @@
 
   <section id="projects" class="project">
     <h2>Projects</h2>
-    <p><strong>Mimir — a local AWS cloud.</strong> I got tired of needing an AWS bill to prototype cloud architectures, so I built one that runs on a laptop: 54 AWS-compatible services and a full web console in a single Docker image. Point your SDK at localhost and go.</p>
-    <a href="https://tanuj24.github.io/mimir/" target="_blank" rel="noopener"><img class="shot" src="images/mimir-console.png" loading="lazy" alt="Mimir web console showing AWS-compatible services running locally"></a>
-    <p class="project-links"><a href="https://tanuj24.github.io/mimir/" target="_blank" rel="noopener">Explore Mimir →</a></p>
-    <div class="tags" style="margin-top:14px;"><span class="tag">Docker</span><span class="tag">Java</span><span class="tag">nginx</span><span class="tag">DuckDB</span></div>
+    <div class="proj-item">
+      <p><strong>Goku — a local AWS cloud.</strong> I got tired of needing an AWS bill to prototype cloud architectures, so I built one that runs on a laptop: 87 AWS-compatible services and a web console for 70 of them in one Docker image. Underneath are real engines — PostgreSQL and MySQL, Spark, Flink, Kafka, Airflow, EC2 instances, and Lambda runtimes. Point your SDK at localhost and go. It started life as Mimir.</p>
+      <a href="https://tanuj24.github.io/goku/" target="_blank" rel="noopener"><img class="shot" src="images/goku-console.png" width="1600" height="956" loading="lazy" alt="Goku web console home page listing AWS services running locally"></a>
+      <p class="project-links"><a href="https://tanuj24.github.io/goku/" target="_blank" rel="noopener">Explore Goku →</a></p>
+      <div class="tags" style="margin-top:14px;"><span class="tag">Java</span><span class="tag">Quarkus</span><span class="tag">TypeScript</span><span class="tag">React</span><span class="tag">Go</span><span class="tag">Docker</span></div>
+    </div>
+    <div class="proj-item">
+      <p><strong>WhileWait — tech hiring in the pauses.</strong> A hiring channel that puts recruiters' open roles in front of developers while Claude Code or Codex is working, through a VS Code extension and CLI that hook into each agent's thinking spinner. I built the recruiter portal and APIs (role posting, wallets, human review, auction-based placement, and a public jobs board) and consent-gated candidate sharing: recruiters learn who a developer is only through that developer's revocable opt-in.</p>
+      <p class="project-links"><a href="https://whilewait.vercel.app" target="_blank" rel="noopener">Explore WhileWait →</a></p>
+      <div class="tags" style="margin-top:14px;"><span class="tag">TypeScript</span><span class="tag">Node.js</span><span class="tag">VS Code extension</span><span class="tag">CLI</span></div>
+    </div>
+  </section>
+
+  <section id="skills">
+    <h2>Skills</h2>
+    <dl class="skills">
+      <dt>Agentic AI &amp; LLMs</dt><dd>LangGraph, LangChain, agent orchestration and routing, tool calling, AWS Bedrock (Claude), prompt and context engineering</dd>
+      <dt>RAG &amp; ontologies</dt><dd>Agentic RAG, knowledge graphs (Neo4j), ontology engineering, property graphs, semantic search (MinHash/LSH), entity resolution</dd>
+      <dt>AI guardrails</dt><dd>Evaluation harnesses and regression suites, answer grading, model selection and routing, SQL validation, RBAC and row-level security, PII masking</dd>
+      <dt>Data engineering</dt><dd>Spark, PySpark, Kafka, Airflow, AWS Glue, dbt, Databricks, Delta Lake, lakehouse architectures, batch and streaming ETL</dd>
+      <dt>Languages</dt><dd>Python, SQL, TypeScript, Java, Scala, C++, PL/SQL</dd>
+      <dt>Databases</dt><dd>Athena, PostgreSQL, DynamoDB, Redis, DuckDB, Neo4j, Snowflake, BigQuery, Teradata, Oracle, MongoDB</dd>
+      <dt>Cloud</dt><dd>AWS (Bedrock, EKS, ECS, Lambda, EventBridge), Azure (Entra ID), GCP (BigQuery, Dataproc, Pub/Sub), Kubernetes, Docker, Terraform, AWS CDK</dd>
+    </dl>
   </section>
 
   <section id="education" class="edu">
     <h2>Education</h2>
     <h3>Indian Institute of Technology (IIT), Delhi</h3>
     <p>B.Tech, Engineering Physics (minor in Computer Science) · 2014 – 2018</p>
+    <p style="margin-top:14px;">Awards: Team Player and Rising Star (FranConnect), 5 Spot Awards (RxLogix).</p>
   </section>
 
 </main>
@@ -338,13 +383,13 @@
 <footer id="contact">
   <div class="wrap">
     <h2>Get in touch</h2>
-    <p class="sub">The fastest way to reach me is email — happy to talk data platforms, GenAI systems, or Mimir.</p>
+    <p class="sub">The fastest way to reach me is email — happy to talk data platforms, agentic AI, or Goku.</p>
     <div class="foot-links">
       <a href="mailto:tanujsoni027@gmail.com">tanujsoni027@gmail.com</a>
       <a href="https://github.com/tanuj24" target="_blank" rel="noopener">GitHub</a>
       <a href="https://www.linkedin.com/in/tanujsoni027" target="_blank" rel="noopener">LinkedIn</a>
     </div>
-    <p class="foot-note">© 2026 Tanuj Soni · New Delhi → the cloud</p>
+    <p class="foot-note">© 2026 Tanuj Soni · Gurugram → the cloud</p>
   </div>
 </footer>
 
