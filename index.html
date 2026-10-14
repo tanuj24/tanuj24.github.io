@@ -7,6 +7,12 @@
 <meta name="description" content="I build data platforms and the agentic AI systems that run on them. Lead Software Engineer at TBO.com, and creator of Goku, a local AWS cloud, and WhileWait.">
 <link rel="canonical" href="https://tanuj24.github.io/">
 <link rel="icon" href="images/favicon.ico">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1117">
+<script>
+  try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tanuj24.github.io/">
 <meta property="og:title" content="Tanuj Soni — AI &amp; Data Engineer, Solutions Architect">
@@ -28,14 +34,52 @@
 }
 </script>
 <style>
+  /* Light by default; dark from the device setting or the toggle (data-theme). */
   :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #f6f8fa;
+    --border: rgba(31, 35, 40, 0.14);
+    --text: #1f2328;
+    --muted: #4b5563;
+    --faint: #6b7280;
+    --accent: #0969da;
+    --nav-bg: rgba(255, 255, 255, 0.86);
+    --selection: rgba(9, 105, 218, 0.18);
+    --sun: none;
+    --moon: block;
+    --gutter: clamp(16px, 5vw, 88px);
+    --measure: 78ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: rgba(240, 246, 252, 0.1);
+      --text: #e6edf3;
+      --muted: #9aa4b2;
+      --faint: #7d8796;
+      --accent: #38bdf8;
+      --nav-bg: rgba(13, 17, 23, 0.88);
+      --selection: rgba(56, 189, 248, 0.3);
+      --sun: block;
+      --moon: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
     --bg: #0d1117;
+    --surface: #161b22;
     --border: rgba(240, 246, 252, 0.1);
     --text: #e6edf3;
     --muted: #9aa4b2;
-    --faint: #6e7a8a;
+    --faint: #7d8796;
     --accent: #38bdf8;
-    --maxw: 760px;
+    --nav-bg: rgba(13, 17, 23, 0.88);
+    --selection: rgba(56, 189, 248, 0.3);
+    --sun: block;
+    --moon: none;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-behavior: smooth; scroll-padding-top: 76px; }
@@ -49,30 +93,28 @@
     line-height: 1.65;
     -webkit-font-smoothing: antialiased;
   }
-  ::selection { background: rgba(56, 189, 248, 0.3); }
+  ::selection { background: var(--selection); }
   a { color: var(--accent); text-decoration: none; transition: color 0.15s; }
   a:hover { text-decoration: underline; }
   img { max-width: 100%; height: auto; }
-  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  .wrap { padding: 0 var(--gutter); }
 
   /* Nav */
   nav {
     position: sticky;
     top: 0;
     z-index: 10;
-    background: rgba(13, 17, 23, 0.88);
+    background: var(--nav-bg);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--border);
   }
   .nav-inner {
-    max-width: var(--maxw);
-    margin: 0 auto;
-    padding: 0 24px;
+    padding: 0 var(--gutter);
     height: 56px;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
   }
   .nav-name { font-weight: 700; font-size: 0.95rem; letter-spacing: -0.01em; white-space: nowrap; }
   .nav-links { display: flex; gap: 2px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
@@ -85,11 +127,28 @@
     white-space: nowrap;
   }
   .nav-links a:hover { color: var(--text); text-decoration: none; }
+  .theme-toggle {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .theme-toggle:hover { color: var(--text); }
+  .theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .theme-toggle svg { width: 17px; height: 17px; }
+  .icon-sun { display: var(--sun); }
+  .icon-moon { display: var(--moon); }
 
   /* Hero + About */
   .hero { padding-top: 72px; padding-bottom: 8px; }
   .hero-top { display: flex; gap: 36px; align-items: center; justify-content: space-between; }
-  h1 { font-size: 2.4rem; line-height: 1.1; letter-spacing: -0.02em; font-weight: 700; }
+  h1 { font-size: clamp(2.2rem, 3.2vw, 3rem); line-height: 1.1; letter-spacing: -0.02em; font-weight: 700; }
   .role { margin-top: 8px; color: var(--muted); font-size: 1.05rem; font-weight: 600; }
   .portrait {
     width: 128px;
@@ -100,12 +159,12 @@
     flex: none;
     border: 1px solid var(--border);
   }
-  .bio { margin-top: 28px; color: var(--muted); font-size: 1rem; max-width: 660px; }
+  .bio { margin-top: 28px; color: var(--muted); font-size: 1.05rem; max-width: var(--measure); }
   .bio strong { color: var(--text); font-weight: 600; }
   .link-row { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 0.95rem; font-weight: 600; }
 
   /* Sections */
-  section { padding: 72px 0 0; }
+  section { padding: 80px 0 0; }
   h2 {
     font-size: 0.82rem;
     font-weight: 700;
@@ -115,8 +174,8 @@
     margin-bottom: 28px;
   }
 
-  /* Experience */
-  .job { padding: 26px 0; border-top: 1px solid var(--border); }
+  /* Experience: the company beside its details on wide screens */
+  .job { padding: 28px 0; border-top: 1px solid var(--border); }
   .job:last-child { border-bottom: 1px solid var(--border); }
   .job-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
   .job-head h3 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.01em; }
@@ -124,35 +183,50 @@
   .job-head h3 a:hover { color: var(--accent); text-decoration: none; }
   .job-role { color: var(--muted); font-weight: 600; font-size: 0.92rem; }
   .job-date { color: var(--faint); font-size: 0.85rem; margin-left: auto; white-space: nowrap; }
-  .job-intro { color: var(--muted); font-size: 0.93rem; margin-top: 8px; }
+  .job-intro { color: var(--muted); font-size: 0.95rem; margin-top: 8px; max-width: var(--measure); }
   .job ul { list-style: none; margin-top: 10px; }
   .sub-proj { margin-top: 18px; font-size: 0.95rem; font-weight: 700; color: var(--text); }
   .sub-proj span { color: var(--faint); font-weight: 600; }
   .job li {
     color: var(--muted);
-    font-size: 0.93rem;
+    font-size: 0.95rem;
     padding-left: 18px;
     position: relative;
     margin-bottom: 7px;
+    max-width: var(--measure);
+    break-inside: avoid;
   }
   .job li::before { content: "–"; position: absolute; left: 0; color: var(--accent); }
   .tags { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; }
   .tag { color: var(--accent); font-size: 0.78rem; font-weight: 600; }
+  @media (min-width: 960px) {
+    .job { display: grid; grid-template-columns: minmax(220px, 22%) 1fr; column-gap: clamp(32px, 4vw, 72px); }
+    .job > * { grid-column: 2; }
+    .job > .job-head { grid-column: 1; grid-row: 1 / span 12; flex-direction: column; align-items: flex-start; gap: 4px; align-self: start; }
+    .job > .job-intro { margin-top: 0; }
+    .job-date { margin-left: 0; }
+    .job li { max-width: 110ch; }
+  }
+  @media (min-width: 1500px) {
+    .job ul { column-count: 2; column-gap: 56px; }
+    .job li { max-width: none; }
+  }
 
   /* Consulting */
   .consulting-note { color: var(--muted); font-size: 0.95rem; margin: -12px 0 24px; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .c-card { border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 16px; }
+  .c-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
   .c-card h3 { font-size: 0.98rem; font-weight: 700; letter-spacing: -0.01em; }
   .c-card h3 a { color: var(--text); }
   .c-card h3 a:hover { color: var(--accent); text-decoration: none; }
   .c-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 2px 0 10px; font-size: 0.8rem; }
   .c-meta .r { color: var(--muted); font-weight: 600; }
   .c-meta .d { color: var(--faint); }
-  .c-card p { color: var(--muted); font-size: 0.88rem; }
+  .c-card p { color: var(--muted); font-size: 0.9rem; }
 
-  /* Project */
-  .project p { color: var(--muted); font-size: 0.98rem; max-width: 660px; }
+  /* Projects: side by side on wide screens */
+  .proj-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 48px clamp(32px, 4vw, 72px); align-items: start; }
+  .project p { color: var(--muted); font-size: 1rem; max-width: var(--measure); }
   .project .shot {
     display: block;
     margin-top: 22px;
@@ -160,31 +234,27 @@
     border-radius: 10px;
   }
   .project-links { margin-top: 18px; font-weight: 600; font-size: 0.95rem; }
-  .proj-item + .proj-item { margin-top: 44px; }
-  .proj-item p + p { margin-top: 12px; }
 
   /* Skills */
-  .skills { display: grid; grid-template-columns: 190px 1fr; gap: 12px 24px; font-size: 0.93rem; }
-  .skills dt { color: var(--text); font-weight: 600; }
+  .skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 24px 40px; font-size: 0.95rem; }
+  .skills dt { color: var(--text); font-weight: 600; margin-bottom: 4px; }
   .skills dd { color: var(--muted); }
 
   /* Education */
   .edu h3 { font-size: 1.02rem; font-weight: 700; }
-  .edu p { color: var(--muted); font-size: 0.93rem; }
+  .edu p { color: var(--muted); font-size: 0.95rem; }
 
   /* Footer */
-  footer { margin-top: 88px; border-top: 1px solid var(--border); padding: 56px 0 48px; }
-  footer .sub { color: var(--muted); max-width: 560px; margin-bottom: 20px; }
+  footer { margin-top: 96px; border-top: 1px solid var(--border); padding: 56px 0 48px; }
+  footer .sub { color: var(--muted); max-width: 60ch; margin-bottom: 20px; }
   .foot-links { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 0.95rem; font-weight: 600; }
   .foot-note { margin-top: 40px; color: var(--faint); font-size: 0.8rem; }
 
   @media (max-width: 640px) {
     .hero { padding-top: 48px; }
     .hero-top { flex-direction: column-reverse; align-items: flex-start; gap: 24px; }
-    .grid-2 { grid-template-columns: 1fr; }
     .job-date { margin-left: 0; width: 100%; }
-    .skills { grid-template-columns: 1fr; gap: 2px; }
-    .skills dd { margin-bottom: 12px; }
+    section { padding-top: 64px; }
   }
 </style>
 </head>
@@ -201,6 +271,10 @@
       <a href="#skills">Skills</a>
       <a href="#contact">Contact</a>
     </div>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
   </div>
 </nav>
 
@@ -345,29 +419,31 @@
 
   <section id="projects" class="project">
     <h2>Projects</h2>
-    <div class="proj-item">
-      <p><strong>Goku — a local AWS cloud.</strong> I got tired of needing an AWS bill to prototype cloud architectures, so I built one that runs on a laptop: 87 AWS-compatible services and a web console for 70 of them in one Docker image. Underneath are real engines — PostgreSQL and MySQL, Spark, Flink, Kafka, Airflow, EC2 instances, and Lambda runtimes. Point your SDK at localhost and go. It started life as Mimir.</p>
-      <a href="https://tanuj24.github.io/goku/" target="_blank" rel="noopener"><img class="shot" src="images/goku-console.png" width="1600" height="956" loading="lazy" alt="Goku web console home page listing AWS services running locally"></a>
-      <p class="project-links"><a href="https://tanuj24.github.io/goku/" target="_blank" rel="noopener">Explore Goku →</a></p>
-      <div class="tags" style="margin-top:14px;"><span class="tag">Java</span><span class="tag">Quarkus</span><span class="tag">TypeScript</span><span class="tag">React</span><span class="tag">Go</span><span class="tag">Docker</span></div>
-    </div>
-    <div class="proj-item">
-      <p><strong>WhileWait — tech hiring in the pauses.</strong> A hiring channel that puts recruiters' open roles in front of developers while Claude Code or Codex is working, through a VS Code extension and CLI that hook into each agent's thinking spinner. I built the recruiter portal and APIs (role posting, wallets, human review, auction-based placement, and a public jobs board) and consent-gated candidate sharing: recruiters learn who a developer is only through that developer's revocable opt-in.</p>
-      <p class="project-links"><a href="https://whilewait.vercel.app" target="_blank" rel="noopener">Explore WhileWait →</a></p>
-      <div class="tags" style="margin-top:14px;"><span class="tag">TypeScript</span><span class="tag">Node.js</span><span class="tag">VS Code extension</span><span class="tag">CLI</span></div>
+    <div class="proj-grid">
+      <div class="proj-item">
+        <p><strong>Goku — a local AWS cloud.</strong> I got tired of needing an AWS bill to prototype cloud architectures, so I built one that runs on a laptop: 87 AWS-compatible services and a web console for 70 of them in one Docker image. Underneath are real engines — PostgreSQL and MySQL, Spark, Flink, Kafka, Airflow, EC2 instances, and Lambda runtimes. Point your SDK at localhost and go. It started life as Mimir.</p>
+        <a href="https://tanuj24.github.io/goku/" target="_blank" rel="noopener"><img class="shot" src="images/goku-console.png" width="1600" height="956" loading="lazy" alt="Goku web console home page listing AWS services running locally"></a>
+        <p class="project-links"><a href="https://tanuj24.github.io/goku/" target="_blank" rel="noopener">Explore Goku →</a></p>
+        <div class="tags" style="margin-top:14px;"><span class="tag">Java</span><span class="tag">Quarkus</span><span class="tag">TypeScript</span><span class="tag">React</span><span class="tag">Go</span><span class="tag">Docker</span></div>
+      </div>
+      <div class="proj-item">
+        <p><strong>WhileWait — tech hiring in the pauses.</strong> A hiring channel that puts recruiters' open roles in front of developers while Claude Code or Codex is working, through a VS Code extension and CLI that hook into each agent's thinking spinner. I built the recruiter portal and APIs (role posting, wallets, human review, auction-based placement, and a public jobs board) and consent-gated candidate sharing: recruiters learn who a developer is only through that developer's revocable opt-in.</p>
+        <p class="project-links"><a href="https://whilewait.vercel.app" target="_blank" rel="noopener">Explore WhileWait →</a></p>
+        <div class="tags" style="margin-top:14px;"><span class="tag">TypeScript</span><span class="tag">Node.js</span><span class="tag">VS Code extension</span><span class="tag">CLI</span></div>
+      </div>
     </div>
   </section>
 
   <section id="skills">
     <h2>Skills</h2>
     <dl class="skills">
-      <dt>Agentic AI &amp; LLMs</dt><dd>LangGraph, LangChain, agent orchestration and routing, tool calling, AWS Bedrock (Claude), prompt and context engineering</dd>
-      <dt>RAG &amp; ontologies</dt><dd>Agentic RAG, knowledge graphs (Neo4j), ontology engineering, property graphs, semantic search (MinHash/LSH), entity resolution</dd>
-      <dt>AI guardrails</dt><dd>Evaluation harnesses and regression suites, answer grading, model selection and routing, SQL validation, RBAC and row-level security, PII masking</dd>
-      <dt>Data engineering</dt><dd>Spark, PySpark, Kafka, Airflow, AWS Glue, dbt, Databricks, Delta Lake, lakehouse architectures, batch and streaming ETL</dd>
-      <dt>Languages</dt><dd>Python, SQL, TypeScript, Java, Scala, C++, PL/SQL</dd>
-      <dt>Databases</dt><dd>Athena, PostgreSQL, DynamoDB, Redis, DuckDB, Neo4j, Snowflake, BigQuery, Teradata, Oracle, MongoDB</dd>
-      <dt>Cloud</dt><dd>AWS (Bedrock, EKS, ECS, Lambda, EventBridge), Azure (Entra ID), GCP (BigQuery, Dataproc, Pub/Sub), Kubernetes, Docker, Terraform, AWS CDK</dd>
+      <div><dt>Agentic AI &amp; LLMs</dt><dd>LangGraph, LangChain, agent orchestration and routing, tool calling, AWS Bedrock (Claude), prompt and context engineering</dd></div>
+      <div><dt>RAG &amp; ontologies</dt><dd>Agentic RAG, knowledge graphs (Neo4j), ontology engineering, property graphs, semantic search (MinHash/LSH), entity resolution</dd></div>
+      <div><dt>AI guardrails</dt><dd>Evaluation harnesses and regression suites, answer grading, model selection and routing, SQL validation, RBAC and row-level security, PII masking</dd></div>
+      <div><dt>Data engineering</dt><dd>Spark, PySpark, Kafka, Airflow, AWS Glue, dbt, Databricks, Delta Lake, lakehouse architectures, batch and streaming ETL</dd></div>
+      <div><dt>Languages</dt><dd>Python, SQL, TypeScript, Java, Scala, C++, PL/SQL</dd></div>
+      <div><dt>Databases</dt><dd>Athena, PostgreSQL, DynamoDB, Redis, DuckDB, Neo4j, Snowflake, BigQuery, Teradata, Oracle, MongoDB</dd></div>
+      <div><dt>Cloud</dt><dd>AWS (Bedrock, EKS, ECS, Lambda, EventBridge), Azure (Entra ID), GCP (BigQuery, Dataproc, Pub/Sub), Kubernetes, Docker, Terraform, AWS CDK</dd></div>
     </dl>
   </section>
 
@@ -389,9 +465,25 @@
       <a href="https://github.com/tanuj24" target="_blank" rel="noopener">GitHub</a>
       <a href="https://www.linkedin.com/in/tanujsoni027" target="_blank" rel="noopener">LinkedIn</a>
     </div>
-    <p class="foot-note">© 2026 Tanuj Soni · Gurugram → the cloud</p>
+    <p class="foot-note">© 2026 Tanuj Soni</p>
   </div>
 </footer>
 
+<script>
+  (function () {
+    var root = document.documentElement, button = document.getElementById("theme-toggle");
+    var dark = window.matchMedia("(prefers-color-scheme: dark)");
+    function current() { return root.getAttribute("data-theme") || (dark.matches ? "dark" : "light"); }
+    function label() { button.setAttribute("aria-label", current() === "dark" ? "Switch to light theme" : "Switch to dark theme"); }
+    button.addEventListener("click", function () {
+      var next = current() === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("theme", next); } catch (e) {}
+      label();
+    });
+    if (dark.addEventListener) dark.addEventListener("change", label);
+    label();
+  })();
+</script>
 </body>
 </html>
